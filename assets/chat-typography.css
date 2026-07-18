@@ -1,0 +1,132 @@
+:is(
+  .chatgpt-chat-typography-thread,
+  .chatgpt-chat-typography-markdown-preview,
+  .chatgpt-chat-typography-plan
+) {
+  --chat-font-family: "LXGW WenKai Screen";
+  --chat-font-size: 16px;
+  --chat-font-weight: 500;
+  --chat-line-height: 1.75;
+  --chat-block-gap: 0.75em;
+  --chat-message-gap: 24px;
+  --chat-code-font-family: "Cascadia Code", var(--chat-native-code-font-family);
+  --chat-code-font-size: 14px;
+  --chat-code-font-weight: 400;
+  --chat-code-line-height: 1.6;
+  --chat-code-surface: color-mix(in srgb, currentColor 5%, transparent);
+  --chat-code-border-color: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.chatgpt-chat-typography-markdown-preview,
+.chatgpt-chat-typography-plan {
+  font-family: var(--chat-font-family), var(--chat-native-font-family) !important;
+  font-size: var(--chat-font-size) !important;
+  font-weight: var(--chat-font-weight) !important;
+  line-height: var(--chat-line-height) !important;
+}
+
+.chatgpt-chat-typography-markdown-preview.cm-editor,
+.chatgpt-chat-typography-markdown-preview.cm-editor
+  :where(.cm-scroller, .cm-content, .cm-line) {
+  font-family: var(--chat-font-family), var(--chat-native-font-family) !important;
+  font-size: var(--chat-font-size) !important;
+  font-weight: var(--chat-font-weight) !important;
+  line-height: var(--chat-line-height) !important;
+}
+
+.chatgpt-chat-typography-markdown-preview.cm-editor
+  .cm-markdown-code-line {
+  box-sizing: border-box;
+  padding: 2px 12px !important;
+  border-right: 1px solid var(--chat-code-border-color) !important;
+  border-left: 1px solid var(--chat-code-border-color) !important;
+  background: var(--chat-code-surface) !important;
+  font-family: var(--chat-code-font-family) !important;
+  font-size: var(--chat-code-font-size) !important;
+  font-weight: var(--chat-code-font-weight) !important;
+  line-height: var(--chat-code-line-height) !important;
+}
+
+.chatgpt-chat-typography-markdown-preview.cm-editor
+  .cm-markdown-code-line-first {
+  padding-top: 6px !important;
+  border-top: 1px solid var(--chat-code-border-color) !important;
+  border-radius: 8px 8px 0 0 !important;
+}
+
+.chatgpt-chat-typography-markdown-preview.cm-editor
+  .cm-markdown-code-line-last {
+  padding-bottom: 6px !important;
+  border-bottom: 1px solid var(--chat-code-border-color) !important;
+  border-radius: 0 0 8px 8px !important;
+}
+
+.chatgpt-chat-typography-thread
+  :where([data-message-author-role], article, [class*="_markdown"]):not(
+    .chatgpt-chat-typography-native-ui *
+  ) {
+  font-weight: var(--chat-font-weight) !important;
+}
+
+.chatgpt-chat-typography-thread
+  :where([data-message-author-role], article, [class*="_markdown"])
+  :not(.chatgpt-chat-typography-native-ui *) {
+  font-family: var(--chat-font-family), var(--chat-native-font-family) !important;
+  font-size: var(--chat-font-size) !important;
+  line-height: var(--chat-line-height) !important;
+}
+
+.chatgpt-chat-typography-thread
+  :where([data-message-author-role], article, [class*="_markdown"])
+  :not(.chatgpt-chat-typography-native-ui *)
+  :where(p, li, blockquote, td, th) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: var(--chat-font-weight) !important;
+  line-height: inherit;
+}
+
+.chatgpt-chat-typography-thread
+  :where(p, ul, ol, blockquote, pre, table, details)
+  :not(.chatgpt-chat-typography-native-ui *)
+  + :where(p, ul, ol, blockquote, pre, table, details)
+  :not(.chatgpt-chat-typography-native-ui *) {
+  margin-top: var(--chat-block-gap) !important;
+}
+
+.chatgpt-chat-typography-thread
+  [data-message-author-role]:not(.chatgpt-chat-typography-native-ui *)
+  + [data-message-author-role]:not(.chatgpt-chat-typography-native-ui *) {
+  margin-top: var(--chat-message-gap) !important;
+}
+
+.chatgpt-chat-typography-thread
+  :where([data-message-author-role], article, [class*="_markdown"])
+  :not(.chatgpt-chat-typography-native-ui *)
+  :where(pre, code, kbd, samp, .inline-markdown) {
+  font-family: var(--chat-code-font-family) !important;
+  font-size: var(--chat-code-font-size) !important;
+  font-weight: var(--chat-code-font-weight) !important;
+  line-height: var(--chat-code-line-height) !important;
+}
+
+.chatgpt-chat-typography-plan
+  :where(p, li, blockquote, td, th) {
+  font-family: var(--chat-font-family), var(--chat-native-font-family) !important;
+  font-size: var(--chat-font-size) !important;
+  font-weight: var(--chat-font-weight) !important;
+  line-height: var(--chat-line-height) !important;
+}
+
+.chatgpt-chat-typography-plan
+  :where(p, ul, ol, blockquote, pre, table, details)
+  + :where(p, ul, ol, blockquote, pre, table, details) {
+  margin-top: var(--chat-block-gap) !important;
+}
+
+.chatgpt-chat-typography-plan :where(pre, code, kbd, samp, .inline-markdown) {
+  font-family: var(--chat-code-font-family) !important;
+  font-size: var(--chat-code-font-size) !important;
+  font-weight: var(--chat-code-font-weight) !important;
+  line-height: var(--chat-code-line-height) !important;
+}

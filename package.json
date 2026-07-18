@@ -1,0 +1,13 @@
+{
+  "name": "chatgpt-restyle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "doctor": "./scripts/doctor-macos.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
