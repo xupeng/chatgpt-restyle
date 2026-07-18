@@ -75,9 +75,11 @@ Apply 会明确报错，不会回退到随机端口。`.env` 只在新的 ChatGP
 ### 是否有后台 daemon 持续运行？
 
 启用后会运行一个后台 watcher，负责处理页面重载、任务切换和 CSS 热更新。
-它不是 LaunchAgent，也不会随登录自动启动。退出 ChatGPT 后，watcher 会在确认
-启动时记录的 ChatGPT 主进程已经结束后自动退出，并删除属于自己的运行状态；
-执行 `Restore.command` 时也会结束 watcher。
+它通过一次性的 per-user launchd submitted job 启动，不安装 LaunchAgent，也不会
+随登录自动启动。这样 watcher 不依赖启动它的 Raycast、Finder 或终端进程继续存活，
+日志也由 launchd 直接写入状态目录。退出 ChatGPT 后，watcher 会在确认启动时记录的
+ChatGPT 主进程已经结束后自动退出，临时 launchd job 随之结束，并删除属于自己的
+运行状态；执行 `Restore.command` 时也会按记录的 launchd label 结束 watcher。
 
 ### 是否会破坏 ChatGPT App 的签名？
 

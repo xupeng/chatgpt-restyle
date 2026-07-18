@@ -58,9 +58,10 @@ fi
 chatgpt_pid="$(chatgpt_main_pids | /usr/bin/head -n 1)"
 [ -n "$chatgpt_pid" ] || fail "无法记录 ChatGPT PID。"
 chatgpt_started="$(process_started_at "$chatgpt_pid")"
-injector_pid="$(launch_injector "$port" "$chatgpt_pid")"
+read -r injector_pid injector_label < <(launch_injector "$port" "$chatgpt_pid")
 injector_started="$(process_started_at "$injector_pid")"
-write_state "$port" "$injector_pid" "$injector_started" "$chatgpt_pid" "$chatgpt_started"
+write_state "$port" "$injector_pid" "$injector_started" "$injector_label" \
+  "$chatgpt_pid" "$chatgpt_started"
 
 if ! "$NODE" "$INJECTOR" --once --port "$port" --timeout-ms 20000; then
   stop_recorded_injector || true

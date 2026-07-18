@@ -247,16 +247,18 @@ state_field() {
 }
 
 write_state() {
-  local port="$1" injector_pid="$2" injector_started_at="$3" chatgpt_pid="$4" chatgpt_started_at="$5"
+  local port="$1" injector_pid="$2" injector_started_at="$3" injector_label="$4"
+  local chatgpt_pid="$5" chatgpt_started_at="$6"
   local temporary="$STATE_PATH.$$.tmp"
   "$NODE" -e '
     const fs = require("node:fs");
-    const [file, port, injectorPid, injectorStartedAt, chatgptPid, chatgptStartedAt, node, injector, exe] = process.argv.slice(1);
-    const state = { schemaVersion: 1, port: Number(port), injectorPid: Number(injectorPid), injectorStartedAt,
-      chatgptPid: Number(chatgptPid), chatgptStartedAt, node, injector, chatgptExe: exe, createdAt: new Date().toISOString() };
+    const [file, port, injectorPid, injectorStartedAt, injectorLabel, chatgptPid, chatgptStartedAt, node, injector, exe] = process.argv.slice(1);
+    const state = { schemaVersion: 2, port: Number(port), injectorPid: Number(injectorPid), injectorStartedAt,
+      injectorLabel, chatgptPid: Number(chatgptPid), chatgptStartedAt, node, injector, chatgptExe: exe,
+      createdAt: new Date().toISOString() };
     fs.writeFileSync(file, JSON.stringify(state, null, 2) + "\n", { mode: 0o600, flag: "wx" });
-  ' "$temporary" "$port" "$injector_pid" "$injector_started_at" "$chatgpt_pid" "$chatgpt_started_at" \
-    "$NODE" "$INJECTOR" "$CHATGPT_EXE"
+  ' "$temporary" "$port" "$injector_pid" "$injector_started_at" "$injector_label" \
+    "$chatgpt_pid" "$chatgpt_started_at" "$NODE" "$INJECTOR" "$CHATGPT_EXE"
   /bin/chmod 600 "$temporary"
   /bin/mv "$temporary" "$STATE_PATH"
 }
@@ -281,18 +283,46 @@ recorded_chatgpt_matches() {
   [ -n "$actual_start" ] && [ "$actual_start" = "$expected_start" ]
 }
 
+injector_label_for_port() {
+  printf 'com.xupeng.chatgpt-restyle.%s\n' "$1"
+}
+
+submitted_job_pid() {
+  local label="$1"
+  /bin/launchctl print "gui/$(/usr/bin/id -u)/$label" 2>/dev/null \
+    | /usr/bin/awk '/^[[:space:]]*pid = [0-9]+$/{print $3; exit}' \
+    || true
+}
+
 stop_recorded_injector() {
-  local pid started node injector port deadline
+  local schema_version pid started node injector label expected_label port deadline
   [ -f "$STATE_PATH" ] || return 0
+  schema_version="$(state_field schemaVersion)" || fail "state.json 中缺少 schemaVersion。"
   pid="$(state_field injectorPid)" || fail "state.json 中缺少 injectorPid。"
   started="$(state_field injectorStartedAt)" || fail "state.json 中缺少 injectorStartedAt。"
   node="$(state_field node)" || fail "state.json 中缺少 node。"
   injector="$(state_field injector)" || fail "state.json 中缺少 injector。"
   port="$(state_field port)" || fail "state.json 中缺少 port。"
-  if ! /bin/kill -0 "$pid" 2>/dev/null; then return 0; fi
+  case "$schema_version" in
+    1) label="" ;;
+    2) label="$(state_field injectorLabel)" || fail "state.json 中缺少 injectorLabel。" ;;
+    *) fail "不支持的 state.json schemaVersion：$schema_version" ;;
+  esac
+  if [ -n "$label" ]; then
+    expected_label="$(injector_label_for_port "$port")"
+    [ "$label" = "$expected_label" ] || fail "记录的 injector launchd label 不符合预期。"
+  fi
+  if ! /bin/kill -0 "$pid" 2>/dev/null; then
+    [ -z "$label" ] || /bin/launchctl remove "$label" >/dev/null 2>&1 || true
+    return 0
+  fi
   recorded_injector_matches "$pid" "$started" "$node" "$injector" "$port" \
     || fail "记录的 injector 进程身份不匹配，拒绝结束该进程。"
-  /bin/kill -TERM "$pid"
+  if [ -n "$label" ]; then
+    /bin/launchctl remove "$label" >/dev/null 2>&1 || /bin/kill -TERM "$pid"
+  else
+    /bin/kill -TERM "$pid"
+  fi
   deadline=$((SECONDS + 6))
   while /bin/kill -0 "$pid" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do /bin/sleep 0.2; done
   if /bin/kill -0 "$pid" 2>/dev/null; then
@@ -306,12 +336,22 @@ stop_recorded_injector() {
 }
 
 launch_injector() {
-  local port="$1" chatgpt_pid="$2" pid
+  local port="$1" chatgpt_pid="$2" label pid deadline
   : > "$INJECTOR_LOG"; : > "$INJECTOR_ERROR_LOG"
-  /usr/bin/nohup "$NODE" "$INJECTOR" --watch --port "$port" --chatgpt-pid "$chatgpt_pid" \
-    >>"$INJECTOR_LOG" 2>>"$INJECTOR_ERROR_LOG" &
-  pid=$!
-  /bin/sleep 0.2
-  /bin/kill -0 "$pid" 2>/dev/null || fail "injector 启动失败，请查看 $INJECTOR_ERROR_LOG"
-  printf '%s\n' "$pid"
+  label="$(injector_label_for_port "$port")"
+  /bin/launchctl remove "$label" >/dev/null 2>&1 || true
+  /bin/launchctl submit -l "$label" -o "$INJECTOR_LOG" -e "$INJECTOR_ERROR_LOG" -- \
+    "$NODE" "$INJECTOR" --watch --port "$port" --chatgpt-pid "$chatgpt_pid" \
+    || fail "无法提交 injector launchd job。"
+  deadline=$((SECONDS + 5))
+  pid="$(submitted_job_pid "$label")"
+  while [ -z "$pid" ] && [ "$SECONDS" -lt "$deadline" ]; do
+    /bin/sleep 0.1
+    pid="$(submitted_job_pid "$label")"
+  done
+  if [ -z "$pid" ] || ! /bin/kill -0 "$pid" 2>/dev/null; then
+    /bin/launchctl remove "$label" >/dev/null 2>&1 || true
+    fail "injector 启动失败，请查看 $INJECTOR_ERROR_LOG"
+  fi
+  printf '%s %s\n' "$pid" "$label"
 }
