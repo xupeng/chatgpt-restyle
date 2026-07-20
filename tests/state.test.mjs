@@ -110,6 +110,58 @@ test("injector identity matching includes PID start time, paths, and exact port"
   child.kill("SIGTERM");
 });
 
+test("CDP listener resolution returns its owning ChatGPT main process", () => {
+  const result = spawnSync("/bin/bash", ["-c", `
+    source "$1"
+    listener_pids() { printf '300\\n301\\n'; }
+    process_parent_pid() {
+      case "$1" in
+        300|301) printf '200\\n' ;;
+        200) printf '100\\n' ;;
+        100) printf '1\\n' ;;
+        *) return 1 ;;
+      esac
+    }
+    pid_is_chatgpt_executable() { [ "$1" -eq 100 ]; }
+    test "$(chatgpt_pid_for_port 54321)" = 100
+    port_belongs_to_chatgpt 54321
+  `, "test", common], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("CDP listener resolution rejects listeners owned by different ChatGPT instances", () => {
+  const result = spawnSync("/bin/bash", ["-c", `
+    source "$1"
+    listener_pids() { printf '300\\n301\\n'; }
+    process_parent_pid() {
+      case "$1" in
+        300) printf '100\\n' ;;
+        301) printf '101\\n' ;;
+        100|101) printf '1\\n' ;;
+        *) return 1 ;;
+      esac
+    }
+    pid_is_chatgpt_executable() { [ "$1" -eq 100 ] || [ "$1" -eq 101 ]; }
+    ! chatgpt_pid_for_port 54321
+    ! port_belongs_to_chatgpt 54321
+  `, "test", common], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("launchd removal wait does not accept a lingering submitted job", () => {
+  const result = spawnSync("/bin/bash", ["-c", `
+    source "$1"
+    checks=0
+    job_is_submitted() {
+      checks=$((checks + 1))
+      [ "$checks" -lt 3 ]
+    }
+    wait_for_job_removal com.example.test
+    [ "$checks" -ge 3 ]
+  `, "test", common], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test("watcher exits and removes its state after the recorded ChatGPT process exits", async (context) => {
   const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "chatgpt-restyle-watch-exit-"));
   const stateRoot = path.join(temporaryHome, "Library/Application Support/ChatGPTRestyle");

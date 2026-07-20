@@ -55,8 +55,8 @@ if ! wait_for_cdp "$port"; then
   fail "ChatGPT 未能打开 CDP 端口 $port；请查看 $APP_ERROR_LOG"
 fi
 
-chatgpt_pid="$(chatgpt_main_pids | /usr/bin/head -n 1)"
-[ -n "$chatgpt_pid" ] || fail "无法记录 ChatGPT PID。"
+chatgpt_pid="$(chatgpt_pid_for_port "$port")" \
+  || fail "无法确定持有 CDP 端口 $port 的 ChatGPT 主进程。"
 chatgpt_started="$(process_started_at "$chatgpt_pid")"
 read -r injector_pid injector_label < <(launch_injector "$port" "$chatgpt_pid")
 injector_started="$(process_started_at "$injector_pid")"
