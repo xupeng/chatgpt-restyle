@@ -92,6 +92,10 @@ pid_is_chatgpt_executable() {
   [ -n "$actual" ] && [ "$actual" = "$expected" ]
 }
 
+process_parent_pid() {
+  /bin/ps -p "$1" -o ppid= 2>/dev/null | /usr/bin/awk '{$1=$1; print}'
+}
+
 chatgpt_main_pids() {
   local pid command_line
   while read -r pid command_line; do
@@ -155,10 +159,17 @@ select_cdp_port() {
 }
 
 pid_is_chatgpt_descendant() {
+  chatgpt_main_pid_for_process "$1" >/dev/null
+}
+
+chatgpt_main_pid_for_process() {
   local current="$1" parent depth=0
   while [ "$current" -gt 1 ] 2>/dev/null && [ "$depth" -lt 32 ]; do
-    pid_is_chatgpt_executable "$current" && return 0
-    parent="$(/bin/ps -p "$current" -o ppid= 2>/dev/null | /usr/bin/awk '{$1=$1; print}')"
+    if pid_is_chatgpt_executable "$current"; then
+      printf '%s\n' "$current"
+      return 0
+    fi
+    parent="$(process_parent_pid "$current")"
     case "$parent" in ''|*[!0-9]*) return 1 ;; esac
     [ "$parent" -ne "$current" ] || return 1
     current="$parent"; depth=$((depth + 1))
@@ -166,15 +177,19 @@ pid_is_chatgpt_descendant() {
   return 1
 }
 
-port_belongs_to_chatgpt() {
-  local port="$1" pid found=false
+chatgpt_pid_for_port() {
+  local port="$1" pid candidate resolved="" found=false
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
     found=true
-    pid_is_chatgpt_descendant "$pid" || return 1
+    candidate="$(chatgpt_main_pid_for_process "$pid")" || return 1
+    if [ -n "$resolved" ] && [ "$candidate" -ne "$resolved" ]; then return 1; fi
+    resolved="$candidate"
   done < <(listener_pids "$port")
-  [ "$found" = true ]
+  [ "$found" = true ] && printf '%s\n' "$resolved"
 }
+
+port_belongs_to_chatgpt() { chatgpt_pid_for_port "$1" >/dev/null; }
 
 verified_cdp_endpoint() {
   local port="$1"
@@ -294,6 +309,18 @@ submitted_job_pid() {
     || true
 }
 
+job_is_submitted() {
+  /bin/launchctl print "gui/$(/usr/bin/id -u)/$1" >/dev/null 2>&1
+}
+
+wait_for_job_removal() {
+  local label="$1" deadline=$((SECONDS + 5))
+  while job_is_submitted "$label" && [ "$SECONDS" -lt "$deadline" ]; do
+    /bin/sleep 0.1
+  done
+  ! job_is_submitted "$label"
+}
+
 stop_recorded_injector() {
   local schema_version pid started node injector label expected_label port deadline
   [ -f "$STATE_PATH" ] || return 0
@@ -314,6 +341,8 @@ stop_recorded_injector() {
   fi
   if ! /bin/kill -0 "$pid" 2>/dev/null; then
     [ -z "$label" ] || /bin/launchctl remove "$label" >/dev/null 2>&1 || true
+    [ -z "$label" ] || wait_for_job_removal "$label" \
+      || fail "injector launchd job 未能按时移除。"
     return 0
   fi
   recorded_injector_matches "$pid" "$started" "$node" "$injector" "$port" \
@@ -333,25 +362,34 @@ stop_recorded_injector() {
     while /bin/kill -0 "$pid" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do /bin/sleep 0.2; done
   fi
   /bin/kill -0 "$pid" 2>/dev/null && fail "injector 未能按时退出。"
+  [ -z "$label" ] || wait_for_job_removal "$label" \
+    || fail "injector launchd job 未能按时移除。"
 }
 
 launch_injector() {
-  local port="$1" chatgpt_pid="$2" label pid deadline
+  local port="$1" chatgpt_pid="$2" label pid deadline attempt
   : > "$INJECTOR_LOG"; : > "$INJECTOR_ERROR_LOG"
   label="$(injector_label_for_port "$port")"
-  /bin/launchctl remove "$label" >/dev/null 2>&1 || true
-  /bin/launchctl submit -l "$label" -o "$INJECTOR_LOG" -e "$INJECTOR_ERROR_LOG" -- \
-    "$NODE" "$INJECTOR" --watch --port "$port" --chatgpt-pid "$chatgpt_pid" \
-    || fail "无法提交 injector launchd job。"
-  deadline=$((SECONDS + 5))
-  pid="$(submitted_job_pid "$label")"
-  while [ -z "$pid" ] && [ "$SECONDS" -lt "$deadline" ]; do
-    /bin/sleep 0.1
-    pid="$(submitted_job_pid "$label")"
-  done
-  if [ -z "$pid" ] || ! /bin/kill -0 "$pid" 2>/dev/null; then
+  for attempt in 1 2 3; do
     /bin/launchctl remove "$label" >/dev/null 2>&1 || true
-    fail "injector 启动失败，请查看 $INJECTOR_ERROR_LOG"
-  fi
-  printf '%s %s\n' "$pid" "$label"
+    if wait_for_job_removal "$label"; then
+      # launchd can briefly reject reuse after `print` stops showing a removed submitted job.
+      /bin/sleep 0.2
+      if /bin/launchctl submit -l "$label" -o "$INJECTOR_LOG" -e "$INJECTOR_ERROR_LOG" -- \
+        "$NODE" "$INJECTOR" --watch --port "$port" --chatgpt-pid "$chatgpt_pid"; then
+        deadline=$((SECONDS + 5))
+        while [ "$SECONDS" -lt "$deadline" ]; do
+          pid="$(submitted_job_pid "$label")"
+          if [ -n "$pid" ] && /bin/kill -0 "$pid" 2>/dev/null; then
+            printf '%s %s\n' "$pid" "$label"
+            return 0
+          fi
+          /bin/sleep 0.1
+        done
+      fi
+    fi
+    /bin/launchctl remove "$label" >/dev/null 2>&1 || true
+    wait_for_job_removal "$label" || true
+  done
+  fail "injector 启动失败，请查看 $INJECTOR_ERROR_LOG"
 }
