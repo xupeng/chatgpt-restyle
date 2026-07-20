@@ -11,6 +11,11 @@ const [template, css] = await Promise.all([
   fs.readFile(path.join(root, "assets", "chat-typography.css"), "utf8"),
 ]);
 
+const ZOOM_CLASS = "chatgpt-restyle-content-zoom";
+const ZOOM_STYLE_ID = "chatgpt-restyle-content-zoom-style";
+const ZOOM_TOAST_ID = "chatgpt-restyle-content-zoom-toast";
+const ZOOM_STORAGE_KEY = "chatgpt-restyle.contentZoomPercent.v1";
+
 function styleDeclaration() {
   const values = new Map();
   return {
@@ -40,9 +45,15 @@ function fixture({
   planAriaLabel = "Plan",
   withQueuedMessages = false,
   withCodeSamples = false,
+  storedZoom = null,
+  storageThrows = false,
 } = {}) {
   const nodes = new Map();
   const observers = [];
+  const listeners = new Map();
+  const storage = new Map();
+  if (storedZoom !== null) storage.set(ZOOM_STORAGE_KEY, storedZoom);
+  const zoomCandidates = new Set();
   const queuedMessages = {
     classList: classList(),
     style: styleDeclaration(),
@@ -50,10 +61,25 @@ function fixture({
   const threadCode = {};
   const previewCode = {};
   const planCode = {};
+  const makeThreadContent = () => ({
+    classList: classList(),
+    style: styleDeclaration(),
+  });
+  let threadContent = makeThreadContent();
+  zoomCandidates.add(threadContent);
+  const threadFooter = {
+    classList: classList(),
+    style: styleDeclaration(),
+    previousElementSibling: threadContent,
+  };
+  const threadWrapper = { parentElement: null };
   const thread = {
     classList: classList(),
     style: styleDeclaration(),
     querySelector(selector) {
+      if (selector === ':scope > * > [data-thread-scroll-footer="true"]') {
+        return threadFooter;
+      }
       return selector === "pre code, code, kbd, samp, .inline-markdown, .cm-markdown-code-line"
         && withCodeSamples
         ? threadCode
@@ -69,6 +95,8 @@ function fixture({
       return previewInsideThread && node === markdownFileEditor;
     },
   };
+  threadWrapper.parentElement = thread;
+  threadFooter.parentElement = threadWrapper;
   const markdownPanel = {
     getAttribute(name) { return name === "aria-label" ? markdownFilename : null; },
   };
@@ -85,6 +113,7 @@ function fixture({
       return selector === '[role="tabpanel"][aria-label]' ? markdownPanel : null;
     },
   };
+  zoomCandidates.add(markdownFileEditor);
   const makePlanContent = () => ({
     classList: classList(),
     style: styleDeclaration(),
@@ -96,6 +125,7 @@ function fixture({
     },
   });
   let planContent = makePlanContent();
+  zoomCandidates.add(planContent);
   const planPanel = {
     getAttribute(name) { return name === "aria-label" ? planAriaLabel : null; },
     querySelector(selector) {
@@ -103,20 +133,22 @@ function fixture({
     },
   };
   const sidebar = { classList: classList(), style: styleDeclaration() };
-  const rootNode = {};
-  const head = {
+  const rootNode = {
     appendChild(node) { nodes.set(node.id, node); },
   };
   const document = {
     documentElement: rootNode,
-    head,
+    head: rootNode,
+    body: rootNode,
     fonts: { check() { return fontAvailable; } },
     createElement() {
       return {
+        attributes: {},
         id: "",
         dataset: {},
         textContent: "",
         remove() { nodes.delete(this.id); },
+        setAttribute(name, value) { this.attributes[name] = String(value); },
       };
     },
     getElementById(id) { return nodes.get(id) || null; },
@@ -146,13 +178,33 @@ function fixture({
       if (selector === ".chatgpt-chat-typography-native-ui") {
         return queuedMessages.classList.contains(selector.slice(1)) ? [queuedMessages] : [];
       }
+      if (selector === `.${ZOOM_CLASS}`) {
+        return [...zoomCandidates].filter((root) => root.classList.contains(ZOOM_CLASS));
+      }
       return [];
     },
   };
   const timers = new Map();
   let nextTimer = 1;
+  const window = {
+    localStorage: {
+      getItem(key) {
+        if (storageThrows) throw new Error("storage unavailable");
+        return storage.get(key) ?? null;
+      },
+      setItem(key, value) {
+        if (storageThrows) throw new Error("storage unavailable");
+        storage.set(key, String(value));
+      },
+    },
+    addEventListener(type, listener) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(listener);
+    },
+    removeEventListener(type, listener) { listeners.get(type)?.delete(listener); },
+  };
   const context = {
-    window: {},
+    window,
     document,
     MutationObserver: class {
       constructor(callback) { this.callback = callback; observers.push(this); }
@@ -176,17 +228,50 @@ function fixture({
     .replace("__CHATGPT_RESTYLE_VERSION_JSON__", JSON.stringify("test-revision"));
   return {
     context,
+    dispatch(type, event) {
+      for (const listener of [...(listeners.get(type) || [])]) listener(event);
+    },
+    listeners,
     nodes,
     observers,
     payload,
     markdownFileEditor,
+    get threadContent() { return threadContent; },
+    replaceThreadContent() {
+      threadContent = makeThreadContent();
+      threadFooter.previousElementSibling = threadContent;
+      zoomCandidates.add(threadContent);
+      return threadContent;
+    },
     get planContent() { return planContent; },
-    replacePlanContent() { planContent = makePlanContent(); return planContent; },
+    replacePlanContent() {
+      planContent = makePlanContent();
+      zoomCandidates.add(planContent);
+      return planContent;
+    },
     planPanel,
     queuedMessages,
     sidebar,
     thread,
+    threadFooter,
+    storage,
     timers,
+  };
+}
+
+function keyboardEvent(code, overrides = {}) {
+  return {
+    altKey: false,
+    code,
+    ctrlKey: true,
+    defaultPrevented: false,
+    immediatePropagationStopped: false,
+    isComposing: false,
+    metaKey: false,
+    shiftKey: true,
+    preventDefault() { this.defaultPrevented = true; },
+    stopImmediatePropagation() { this.immediatePropagationStopped = true; },
+    ...overrides,
   };
 }
 
@@ -307,6 +392,121 @@ test("replaces and cleans up dynamically rendered Plan content", () => {
   assert.equal(replacement.style.values.size, 0);
 });
 
+test("zooms the conversation, Markdown file, and Plan roots without the footer or queued UI", () => {
+  const current = fixture({
+    withMarkdownFileEditor: true,
+    withPlan: true,
+    withQueuedMessages: true,
+  });
+  const result = vm.runInNewContext(current.payload, current.context);
+
+  assert.equal(result.contentZoomPercent, 100);
+  assert.equal(current.threadContent.classList.contains(ZOOM_CLASS), true);
+  assert.equal(current.markdownFileEditor.classList.contains(ZOOM_CLASS), true);
+  assert.equal(current.planContent.classList.contains(ZOOM_CLASS), true);
+  assert.equal(current.threadFooter.classList.contains(ZOOM_CLASS), false);
+  assert.equal(current.queuedMessages.classList.contains(ZOOM_CLASS), false);
+  assert.match(current.nodes.get(ZOOM_STYLE_ID).textContent, /zoom: 1 !important/);
+});
+
+test("loads persisted zoom and falls back for invalid or unavailable storage", () => {
+  const persisted = fixture({ storedZoom: "130" });
+  const result = vm.runInNewContext(persisted.payload, persisted.context);
+  assert.equal(result.contentZoomPercent, 130);
+  assert.match(persisted.nodes.get(ZOOM_STYLE_ID).textContent, /zoom: 1\.3 !important/);
+
+  for (const storedZoom of ["59", "161", "90.5", "invalid"]) {
+    const invalid = fixture({ storedZoom });
+    assert.equal(
+      vm.runInNewContext(invalid.payload, invalid.context).contentZoomPercent,
+      100,
+    );
+  }
+
+  const unavailable = fixture({ storageThrows: true });
+  assert.equal(
+    vm.runInNewContext(unavailable.payload, unavailable.context).contentZoomPercent,
+    100,
+  );
+});
+
+test("handles exact zoom shortcuts, persists changes, resets, and enforces limits", () => {
+  const current = fixture();
+  vm.runInNewContext(current.payload, current.context);
+
+  const zoomIn = keyboardEvent("Equal");
+  current.dispatch("keydown", zoomIn);
+  assert.equal(zoomIn.defaultPrevented, true);
+  assert.equal(zoomIn.immediatePropagationStopped, true);
+  assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "110");
+  assert.equal(current.nodes.get(ZOOM_TOAST_ID).textContent, "正文缩放 110%");
+
+  current.dispatch("keydown", keyboardEvent("Minus"));
+  assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "100");
+
+  for (let index = 0; index < 10; index += 1) {
+    current.dispatch("keydown", keyboardEvent("NumpadSubtract"));
+  }
+  assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "60");
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.contentZoomPercent, 60);
+
+  for (let index = 0; index < 20; index += 1) {
+    current.dispatch("keydown", keyboardEvent("NumpadAdd"));
+  }
+  assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "160");
+
+  current.dispatch("keydown", keyboardEvent("Digit0"));
+  assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "100");
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.contentZoomPercent, 100);
+});
+
+test("ignores other shortcuts and synchronizes storage changes without a toast", () => {
+  const current = fixture();
+  vm.runInNewContext(current.payload, current.context);
+
+  const nativeZoom = keyboardEvent("Equal", { ctrlKey: false, metaKey: true });
+  current.dispatch("keydown", nativeZoom);
+  assert.equal(nativeZoom.defaultPrevented, false);
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.contentZoomPercent, 100);
+
+  const composing = keyboardEvent("Equal", { isComposing: true });
+  current.dispatch("keydown", composing);
+  assert.equal(composing.defaultPrevented, false);
+
+  current.dispatch("storage", { key: ZOOM_STORAGE_KEY, newValue: "140" });
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.contentZoomPercent, 140);
+  assert.equal(current.nodes.has(ZOOM_TOAST_ID), false);
+
+  current.dispatch("storage", { key: ZOOM_STORAGE_KEY, newValue: "invalid" });
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.contentZoomPercent, 100);
+});
+
+test("resyncs replaced zoom roots and cleanup keeps the persisted preference", () => {
+  const current = fixture({ withPlan: true, storedZoom: "120" });
+  vm.runInNewContext(current.payload, current.context);
+  const oldThreadContent = current.threadContent;
+  const oldPlanContent = current.planContent;
+  const nextThreadContent = current.replaceThreadContent();
+  const nextPlanContent = current.replacePlanContent();
+
+  current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.sync();
+  assert.equal(oldThreadContent.classList.contains(ZOOM_CLASS), false);
+  assert.equal(oldPlanContent.classList.contains(ZOOM_CLASS), false);
+  assert.equal(nextThreadContent.classList.contains(ZOOM_CLASS), true);
+  assert.equal(nextPlanContent.classList.contains(ZOOM_CLASS), true);
+
+  current.dispatch("keydown", keyboardEvent("Equal"));
+  assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "130");
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.cleanup(), true);
+  assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "130");
+  assert.equal(current.listeners.get("keydown").size, 0);
+  assert.equal(current.listeners.get("storage").size, 0);
+  assert.equal(current.timers.size, 0);
+  assert.equal(current.nodes.size, 0);
+  assert.equal(nextThreadContent.classList.contains(ZOOM_CLASS), false);
+  assert.equal(nextPlanContent.classList.contains(ZOOM_CLASS), false);
+});
+
 test("injects once, captures native fonts, and leaves sidebar untouched", () => {
   const current = fixture({ withCodeSamples: true });
   const result = vm.runInNewContext(current.payload, current.context);
@@ -324,10 +524,19 @@ test("injects once, captures native fonts, and leaves sidebar untouched", () => 
   );
   assert.equal(current.sidebar.classList.values.size, 0);
   assert.equal(current.sidebar.style.values.size, 0);
-  assert.equal(current.nodes.size, 1);
+  assert.equal(current.nodes.size, 2);
+  assert.equal(current.listeners.get("keydown").size, 1);
+  assert.equal(current.listeners.get("storage").size, 1);
 
+  current.dispatch("keydown", keyboardEvent("Equal"));
+  assert.equal(current.nodes.has(ZOOM_TOAST_ID), true);
+  assert.equal(current.timers.size, 1);
   vm.runInNewContext(current.payload, current.context);
-  assert.equal(current.nodes.size, 1, "reapply must reuse the same style element");
+  assert.equal(current.nodes.size, 2, "reapply must reuse the two style elements");
+  assert.equal(current.timers.size, 0, "reapply must clear the previous toast timer");
+  assert.equal(current.listeners.get("keydown").size, 1);
+  assert.equal(current.listeners.get("storage").size, 1);
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.contentZoomPercent, 110);
   assert.equal(
     current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.nativeFontFamily,
     '-apple-system, "PingFang SC", sans-serif',

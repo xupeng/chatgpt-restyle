@@ -267,7 +267,7 @@ export function earlyPayloadFor(payload, revision) {
   })()`;
 }
 
-async function statusOf(session) {
+export async function statusOf(session) {
   return session.evaluate(`(() => {
     const state = window.${STATE_KEY};
     return state ? {
@@ -276,10 +276,11 @@ async function statusOf(session) {
       previewCount: document.querySelectorAll('.chatgpt-chat-typography-markdown-preview').length,
       planCount: document.querySelectorAll('.chatgpt-chat-typography-plan').length,
       nativeUiCount: document.querySelectorAll('.chatgpt-chat-typography-native-ui').length,
+      contentZoomPercent: Number(state.contentZoomPercent) || 100,
       fontAvailable: Boolean(state.fontAvailable),
       nativeFontFamily: state.nativeFontFamily || null,
       version: state.version,
-    } : { installed: false, threadFound: false, previewCount: 0, planCount: 0, nativeUiCount: 0, fontAvailable: false };
+    } : { installed: false, threadFound: false, previewCount: 0, planCount: 0, nativeUiCount: 0, contentZoomPercent: 100, fontAvailable: false };
   })()`);
 }
 
