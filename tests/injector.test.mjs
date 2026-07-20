@@ -8,11 +8,13 @@ import {
   processIsAlive,
   removeOwnedState,
   stateBelongsToWatcher,
+  statusOf,
   validatedDebuggerUrl,
 } from "../scripts/injector.mjs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import vm from "node:vm";
 
 const port = 54321;
 const validTarget = {
@@ -84,6 +86,33 @@ test("early payload waits for both current ChatGPT shell markers", () => {
   assert.match(payload, /aside\.app-shell-left-panel/);
   assert.match(payload, /MutationObserver/);
   assert.match(payload, /revision-1/);
+});
+
+test("status reports the current content zoom and defaults to 100 when absent", async () => {
+  const statusSession = (state) => ({
+    evaluate(expression) {
+      return vm.runInNewContext(expression, {
+        window: { __CHATGPT_CHAT_TYPOGRAPHY_STATE__: state },
+        document: {
+          querySelector() { return {}; },
+          querySelectorAll() { return []; },
+        },
+      });
+    },
+  });
+
+  const installed = await statusOf(statusSession({
+    contentZoomPercent: 130,
+    fontAvailable: true,
+    nativeFontFamily: "system-ui",
+    version: "revision-1",
+  }));
+  assert.equal(installed.contentZoomPercent, 130);
+  assert.equal(installed.installed, true);
+
+  const absent = await statusOf(statusSession(undefined));
+  assert.equal(absent.contentZoomPercent, 100);
+  assert.equal(absent.installed, false);
 });
 
 test("removes runtime state only when it belongs to the exiting watcher", async () => {

@@ -51,6 +51,20 @@ Raycast 的 Script Commands 目录应包含：
 编辑 [`assets/chat-typography.css`](./assets/chat-typography.css) 顶部的 CSS
 变量。ChatGPT 已由 ChatGPT Restyle 启动时，保存文件后会自动热更新。
 
+## 正文缩放
+
+ChatGPT Restyle 可以统一缩放对话正文、Markdown 文件正文和 Plan 正文，不改变
+输入框、队列消息、侧栏、顶部栏或面板 chrome：
+
+- `Control` + `Shift` + `+`：放大 10%
+- `Control` + `Shift` + `-`：缩小 10%
+- `Control` + `Shift` + `0`：恢复 100%
+
+缩放范围为 60%–160%。当前比例会短暂显示在页面底部，并由 ChatGPT 的本地存储
+保存；所有任务、正文区域和标签页共用同一比例，刷新或重启后仍会保留。
+`Restore.command` 只移除当前注入效果，不删除已保存的比例。ChatGPT 原有的
+`Command` + `+` / `-` 整窗缩放快捷键保持不变。
+
 ## 配置固定端口
 
 默认情况下，每个新的 ChatGPT Restyle 会话都会随机选择 CDP 端口。如需使用固定
