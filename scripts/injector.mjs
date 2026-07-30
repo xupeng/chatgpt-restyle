@@ -10,6 +10,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const TARGET_ID = /^[A-Za-z0-9._-]{1,200}$/;
 const STATE_KEY = "__CHATGPT_CHAT_TYPOGRAPHY_STATE__";
+const MAIN_SURFACE_SELECTOR = "main[data-app-shell-main-surface]";
+const SIDEBAR_SELECTOR = "aside.app-shell-left-panel";
 const RUNTIME_STATE_PATH = process.env.HOME
   ? path.join(
     process.env.HOME,
@@ -72,7 +74,14 @@ export function isValidCdpPageTarget(target, port) {
 }
 
 export function parseArgs(argv) {
-  const options = { mode: null, port: null, timeoutMs: 15000, chatgptPid: null };
+  const options = {
+    mode: null,
+    port: null,
+    timeoutMs: 15000,
+    chatgptPid: null,
+    fontEnabled: true,
+    zoomEnabled: true,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (["--watch", "--once", "--remove", "--status"].includes(arg)) {
@@ -82,6 +91,20 @@ export function parseArgs(argv) {
     else if (arg === "--port") options.port = Number(argv[++index]);
     else if (arg === "--chatgpt-pid") options.chatgptPid = Number(argv[++index]);
     else if (arg === "--timeout-ms") options.timeoutMs = Number(argv[++index]);
+    else if (arg === "--font-enabled") {
+      const value = argv[++index];
+      if (!["true", "false"].includes(value)) {
+        throw new Error("--font-enabled must be true or false");
+      }
+      options.fontEnabled = value === "true";
+    }
+    else if (arg === "--zoom-enabled") {
+      const value = argv[++index];
+      if (!["true", "false"].includes(value)) {
+        throw new Error("--zoom-enabled must be true or false");
+      }
+      options.zoomEnabled = value === "true";
+    }
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (!options.mode) throw new Error("Choose --watch, --once, --remove, or --status");
@@ -203,8 +226,8 @@ async function listTargets(port) {
 
 async function probe(session) {
   return session.evaluate(`(() => ({
-    shell: Boolean(document.querySelector('main.main-surface')),
-    sidebar: Boolean(document.querySelector('aside.app-shell-left-panel')),
+    shell: Boolean(document.querySelector(${JSON.stringify(MAIN_SURFACE_SELECTOR)})),
+    sidebar: Boolean(document.querySelector(${JSON.stringify(SIDEBAR_SELECTOR)})),
     href: location.href,
   }))()`);
 }
@@ -236,16 +259,27 @@ async function connectChatGPTTargets(port, timeoutMs) {
   throw new Error(`No verified ChatGPT renderer: ${lastError.message}`);
 }
 
-async function buildPayload() {
+export async function buildPayload(options) {
   const [css, template] = await Promise.all([
     fs.readFile(path.join(root, "assets", "chat-typography.css"), "utf8"),
     fs.readFile(path.join(root, "assets", "renderer-inject.js"), "utf8"),
   ]);
-  const revision = createHash("sha256").update(css).update(template).digest("hex").slice(0, 20);
+  const configuration = JSON.stringify({
+    fontEnabled: options.fontEnabled,
+    zoomEnabled: options.zoomEnabled,
+  });
+  const revision = createHash("sha256")
+    .update(css)
+    .update(template)
+    .update(configuration)
+    .digest("hex")
+    .slice(0, 20);
   return {
     payload: template
       .replace("__CHATGPT_RESTYLE_CSS_JSON__", JSON.stringify(css))
-      .replace("__CHATGPT_RESTYLE_VERSION_JSON__", JSON.stringify(revision)),
+      .replace("__CHATGPT_RESTYLE_VERSION_JSON__", JSON.stringify(revision))
+      .replace("__CHATGPT_RESTYLE_FONT_ENABLED_JSON__", JSON.stringify(options.fontEnabled))
+      .replace("__CHATGPT_RESTYLE_ZOOM_ENABLED_JSON__", JSON.stringify(options.zoomEnabled)),
     revision,
   };
 }
@@ -256,7 +290,7 @@ export function earlyPayloadFor(payload, revision) {
     window.__CHATGPT_CHAT_TYPOGRAPHY_EARLY_GENERATION__ = generation;
     const install = () => {
       if (window.__CHATGPT_CHAT_TYPOGRAPHY_EARLY_GENERATION__ !== generation) return true;
-      if (!document.querySelector('main.main-surface') || !document.querySelector('aside.app-shell-left-panel')) return false;
+      if (!document.querySelector(${JSON.stringify(MAIN_SURFACE_SELECTOR)}) || !document.querySelector(${JSON.stringify(SIDEBAR_SELECTOR)})) return false;
       ${payload};
       return true;
     };
@@ -272,21 +306,33 @@ export async function statusOf(session) {
     const state = window.${STATE_KEY};
     return state ? {
       installed: true,
-      threadFound: Boolean(document.querySelector('main.main-surface .thread-scroll-container.chatgpt-chat-typography-thread')),
+      threadFound: Boolean(document.querySelector(${JSON.stringify(`${MAIN_SURFACE_SELECTOR} .thread-scroll-container`)})),
       previewCount: document.querySelectorAll('.chatgpt-chat-typography-markdown-preview').length,
       planCount: document.querySelectorAll('.chatgpt-chat-typography-plan').length,
       nativeUiCount: document.querySelectorAll('.chatgpt-chat-typography-native-ui').length,
       contentZoomPercent: Number(state.contentZoomPercent) || 100,
-      fontAvailable: Boolean(state.fontAvailable),
+      fontEnabled: state.fontEnabled !== false,
+      zoomEnabled: state.zoomEnabled !== false,
+      fontAvailable: state.fontEnabled === false ? null : Boolean(state.fontAvailable),
       nativeFontFamily: state.nativeFontFamily || null,
       version: state.version,
-    } : { installed: false, threadFound: false, previewCount: 0, planCount: 0, nativeUiCount: 0, contentZoomPercent: 100, fontAvailable: false };
+    } : {
+      installed: false,
+      threadFound: false,
+      previewCount: 0,
+      planCount: 0,
+      nativeUiCount: 0,
+      contentZoomPercent: 100,
+      fontEnabled: false,
+      zoomEnabled: false,
+      fontAvailable: null,
+    };
   })()`);
 }
 
 async function runOneShot(options) {
   const connected = await connectChatGPTTargets(options.port, options.timeoutMs);
-  const built = options.mode === "once" ? await buildPayload() : null;
+  const built = options.mode === "once" ? await buildPayload(options) : null;
   const results = [];
   for (const { target, session } of connected) {
     try {
@@ -306,7 +352,7 @@ async function runOneShot(options) {
 }
 
 async function runWatch(options) {
-  let built = await buildPayload();
+  let built = await buildPayload(options);
   const sessions = new Map();
   let stopping = false;
   let refreshTimer = null;
@@ -325,7 +371,7 @@ async function runWatch(options) {
   };
 
   const refresh = async () => {
-    const next = await buildPayload();
+    const next = await buildPayload(options);
     if (next.revision === built.revision) return;
     built = next;
     await Promise.all([...sessions.values()].map((record) => install(record).catch((error) => {

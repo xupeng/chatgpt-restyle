@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildPayload,
   earlyPayloadFor,
   isValidCdpPageTarget,
   parseArgs,
@@ -56,7 +57,36 @@ test("parses a single mode and valid dynamic port", () => {
     port,
     timeoutMs: 15000,
     chatgptPid: null,
+    fontEnabled: true,
+    zoomEnabled: true,
   });
+  assert.deepEqual(
+    parseArgs([
+      "--once",
+      "--port",
+      String(port),
+      "--font-enabled",
+      "false",
+      "--zoom-enabled",
+      "true",
+    ]),
+    {
+      mode: "once",
+      port,
+      timeoutMs: 15000,
+      chatgptPid: null,
+      fontEnabled: false,
+      zoomEnabled: true,
+    },
+  );
+  assert.throws(
+    () => parseArgs(["--once", "--port", String(port), "--font-enabled", "1"]),
+    /font-enabled/,
+  );
+  assert.throws(
+    () => parseArgs(["--once", "--port", String(port), "--zoom-enabled", "TRUE"]),
+    /zoom-enabled/,
+  );
   assert.throws(() => parseArgs(["--status", "--port", "80"]), /valid --port/);
   assert.throws(() => parseArgs(["--port", String(port)]), /Choose/);
   assert.throws(
@@ -71,6 +101,8 @@ test("accepts a ChatGPT PID only for watcher mode", () => {
     port,
     timeoutMs: 15000,
     chatgptPid: 123,
+    fontEnabled: true,
+    zoomEnabled: true,
   });
   assert.throws(
     () => parseArgs(["--status", "--port", String(port), "--chatgpt-pid", "123"]),
@@ -82,10 +114,26 @@ test("accepts a ChatGPT PID only for watcher mode", () => {
 
 test("early payload waits for both current ChatGPT shell markers", () => {
   const payload = earlyPayloadFor("window.__installed = true", "revision-1");
-  assert.match(payload, /main\.main-surface/);
+  assert.match(payload, /main\[data-app-shell-main-surface\]/);
+  assert.doesNotMatch(payload, /main\.main-surface/);
   assert.match(payload, /aside\.app-shell-left-panel/);
   assert.match(payload, /MutationObserver/);
   assert.match(payload, /revision-1/);
+});
+
+test("payload revision includes both feature switches", async () => {
+  const bothEnabled = await buildPayload({ fontEnabled: true, zoomEnabled: true });
+  const fontDisabled = await buildPayload({ fontEnabled: false, zoomEnabled: true });
+  const zoomDisabled = await buildPayload({ fontEnabled: true, zoomEnabled: false });
+
+  assert.notEqual(bothEnabled.revision, fontDisabled.revision);
+  assert.notEqual(bothEnabled.revision, zoomDisabled.revision);
+  for (const built of [bothEnabled, fontDisabled, zoomDisabled]) {
+    assert.doesNotMatch(
+      built.payload,
+      /__CHATGPT_RESTYLE_(?:FONT|ZOOM)_ENABLED_JSON__/,
+    );
+  }
 });
 
 test("status reports the current content zoom and defaults to 100 when absent", async () => {
@@ -103,16 +151,30 @@ test("status reports the current content zoom and defaults to 100 when absent", 
 
   const installed = await statusOf(statusSession({
     contentZoomPercent: 130,
+    fontEnabled: true,
+    zoomEnabled: false,
     fontAvailable: true,
     nativeFontFamily: "system-ui",
     version: "revision-1",
   }));
   assert.equal(installed.contentZoomPercent, 130);
   assert.equal(installed.installed, true);
+  assert.equal(installed.fontEnabled, true);
+  assert.equal(installed.zoomEnabled, false);
+
+  const fontDisabled = await statusOf(statusSession({
+    contentZoomPercent: 120,
+    fontEnabled: false,
+    zoomEnabled: true,
+    fontAvailable: true,
+  }));
+  assert.equal(fontDisabled.fontAvailable, null);
 
   const absent = await statusOf(statusSession(undefined));
   assert.equal(absent.contentZoomPercent, 100);
   assert.equal(absent.installed, false);
+  assert.equal(absent.fontEnabled, false);
+  assert.equal(absent.zoomEnabled, false);
 });
 
 test("removes runtime state only when it belongs to the exiting watcher", async () => {

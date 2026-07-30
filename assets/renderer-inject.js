@@ -1,4 +1,4 @@
-((cssText, version) => {
+((cssText, version, fontEnabled, zoomEnabled) => {
   const STATE_KEY = "__CHATGPT_CHAT_TYPOGRAPHY_STATE__";
   const STYLE_ID = "chatgpt-chat-typography-style";
   const THREAD_CLASS = "chatgpt-chat-typography-thread";
@@ -6,6 +6,7 @@
   const PLAN_CLASS = "chatgpt-chat-typography-plan";
   const NATIVE_UI_CLASS = "chatgpt-chat-typography-native-ui";
   const ZOOM_CLASS = "chatgpt-restyle-content-zoom";
+  const THREAD_ZOOM_LAYOUT_CLASS = "chatgpt-restyle-content-zoom-thread-layout";
   const ZOOM_STYLE_ID = "chatgpt-restyle-content-zoom-style";
   const ZOOM_TOAST_ID = "chatgpt-restyle-content-zoom-toast";
   const ZOOM_STORAGE_KEY = "chatgpt-restyle.contentZoomPercent.v1";
@@ -13,13 +14,14 @@
   const MIN_ZOOM_PERCENT = 60;
   const MAX_ZOOM_PERCENT = 160;
   const ZOOM_STEP_PERCENT = 10;
-  const THREAD_SELECTOR = "main.main-surface .thread-scroll-container";
+  const MAIN_SURFACE_SELECTOR = "main[data-app-shell-main-surface]";
+  const THREAD_SELECTOR = `${MAIN_SURFACE_SELECTOR} .thread-scroll-container`;
   const THREAD_FOOTER_SELECTOR =
     ':scope > * > [data-thread-scroll-footer="true"]';
   const QUEUED_MESSAGES_SELECTOR =
     '.vertical-scroll-fade-mask.hide-scrollbar[class*="max-h-[30dvh]"]';
   const MARKDOWN_FILE_EDITOR_SELECTOR =
-    'main.main-surface [role="tabpanel"][aria-label] .cm-editor';
+    `${MAIN_SURFACE_SELECTOR} [role="tabpanel"][aria-label] .cm-editor`;
   const MARKDOWN_FILE_EXTENSION = /\.(?:md|markdown)$/i;
   const PLAN_PANEL_SELECTOR = '[role="tabpanel"][aria-label="Plan"]';
   const PLAN_CONTENT_SELECTOR = '[class*="_markdownContent_"].text-size-chat';
@@ -27,16 +29,15 @@
     "pre code, code, kbd, samp, .inline-markdown, .cm-markdown-code-line";
 
   const previous = window[STATE_KEY];
-  previous?.observer?.disconnect();
-  if (previous?.timer) clearTimeout(previous.timer);
-  previous?.disposeZoom?.();
-  for (const className of [THREAD_CLASS, PREVIEW_CLASS, PLAN_CLASS]) {
-    document.querySelectorAll(`.${className}`).forEach((root) => {
-      root.style.removeProperty("--chat-native-code-font-family");
-    });
+  const previousNativeFontFamily = previous?.nativeFontFamily || null;
+  if (previous?.cleanup) previous.cleanup();
+  else {
+    previous?.observer?.disconnect();
+    if (previous?.timer) clearTimeout(previous.timer);
+    previous?.disposeZoom?.();
   }
 
-  let nativeFontFamily = previous?.nativeFontFamily || null;
+  let nativeFontFamily = fontEnabled ? previousNativeFontFamily : null;
   let currentThread = null;
   let currentPreviews = new Set();
   let currentPlans = new Set();
@@ -66,6 +67,10 @@
   let contentZoomPercent = readZoomPercent();
 
   const ensureStyle = () => {
+    if (!fontEnabled) {
+      document.getElementById(STYLE_ID)?.remove();
+      return;
+    }
     let style = document.getElementById(STYLE_ID);
     if (!style) {
       style = document.createElement("style");
@@ -77,6 +82,8 @@
   };
 
   const updateZoomStyle = () => {
+    const zoomFactor = contentZoomPercent / 100;
+    const inverseZoomPercent = 10000 / contentZoomPercent;
     let style = document.getElementById(ZOOM_STYLE_ID);
     if (!style) {
       style = document.createElement("style");
@@ -86,7 +93,12 @@
     style.dataset.chatgptRestyleVersion = version;
     style.textContent = `
 .${ZOOM_CLASS} {
-  zoom: ${String(contentZoomPercent / 100)} !important;
+  inline-size: ${String(inverseZoomPercent)}% !important;
+  zoom: ${String(zoomFactor)} !important;
+}
+
+.${ZOOM_CLASS}.${THREAD_ZOOM_LAYOUT_CLASS} {
+  max-inline-size: calc(var(--thread-content-max-width) / ${String(zoomFactor)}) !important;
 }
 
 #${ZOOM_TOAST_ID} {
@@ -223,15 +235,23 @@
   };
 
   const syncZoomRoots = (thread, previews, plans) => {
-    const roots = new Set([
-      findThreadContent(thread),
+    const threadContent = zoomEnabled ? findThreadContent(thread) : null;
+    const roots = new Set(zoomEnabled ? [
+      threadContent,
       ...previews,
       ...plans,
-    ].filter(Boolean));
+    ].filter(Boolean) : []);
     for (const root of currentZoomRoots) {
-      if (!roots.has(root)) root.classList.remove(ZOOM_CLASS);
+      if (!roots.has(root)) {
+        root.classList.remove(ZOOM_CLASS);
+        root.classList.remove(THREAD_ZOOM_LAYOUT_CLASS);
+      }
     }
-    roots.forEach((root) => root.classList.add(ZOOM_CLASS));
+    roots.forEach((root) => {
+      root.classList.add(ZOOM_CLASS);
+      root.classList.remove(THREAD_ZOOM_LAYOUT_CLASS);
+    });
+    threadContent?.classList.add(THREAD_ZOOM_LAYOUT_CLASS);
     currentZoomRoots = roots;
   };
 
@@ -254,22 +274,23 @@
     const thread = document.querySelector(THREAD_SELECTOR);
     if (currentThread && currentThread !== thread) detach(currentThread);
     currentThread = thread;
-    if (thread && !nativeFontFamily) {
+    if (fontEnabled && thread && !nativeFontFamily) {
       nativeFontFamily = thread.style.getPropertyValue?.("--chat-native-font-family") || null;
     }
-    if (thread && !nativeFontFamily) {
+    if (fontEnabled && thread && !nativeFontFamily) {
       const nativeSample = thread.querySelector?.(
         '[data-message-author-role], article, [class*="_markdown"]',
       ) || thread;
       nativeFontFamily = getComputedStyle(nativeSample).fontFamily;
     }
-    if (thread) {
+    if (fontEnabled && thread) {
       thread.style.setProperty("--chat-native-font-family", nativeFontFamily || "system-ui, sans-serif");
       captureNativeCodeFont(thread, THREAD_CLASS);
       thread.classList.add(THREAD_CLASS);
     }
+    else detach(thread);
 
-    const nativeUiRoots = new Set(findNativeUiRoots(thread));
+    const nativeUiRoots = new Set(fontEnabled ? findNativeUiRoots(thread) : []);
     for (const root of currentNativeUiRoots) {
       if (!nativeUiRoots.has(root)) detachNativeUi(root);
     }
@@ -281,14 +302,17 @@
       if (!previews.has(preview)) detachPreview(preview);
     }
     for (const preview of previews) {
-      if (!preview.classList.contains(PREVIEW_CLASS)) {
+      if (!fontEnabled) {
+        detachPreview(preview);
+      }
+      else if (!preview.classList.contains(PREVIEW_CLASS)) {
         preview.style.setProperty(
           "--chat-native-font-family",
           getComputedStyle(preview).fontFamily || nativeFontFamily || "system-ui, sans-serif",
         );
         preview.classList.add(PREVIEW_CLASS);
       }
-      captureNativeCodeFont(preview, PREVIEW_CLASS, preview);
+      if (fontEnabled) captureNativeCodeFont(preview, PREVIEW_CLASS, preview);
     }
     currentPreviews = previews;
 
@@ -297,14 +321,17 @@
       if (!plans.has(plan)) detachPlan(plan);
     }
     for (const plan of plans) {
-      if (!plan.classList.contains(PLAN_CLASS)) {
+      if (!fontEnabled) {
+        detachPlan(plan);
+      }
+      else if (!plan.classList.contains(PLAN_CLASS)) {
         plan.style.setProperty(
           "--chat-native-font-family",
           getComputedStyle(plan).fontFamily || nativeFontFamily || "system-ui, sans-serif",
         );
         plan.classList.add(PLAN_CLASS);
       }
-      captureNativeCodeFont(plan, PLAN_CLASS);
+      if (fontEnabled) captureNativeCodeFont(plan, PLAN_CLASS);
     }
     currentPlans = plans;
     syncZoomRoots(thread, previews, plans);
@@ -326,8 +353,13 @@
     window.removeEventListener("storage", onZoomStorage);
     if (zoomToastTimer !== null) clearTimeout(zoomToastTimer);
     zoomToastTimer = null;
-    currentZoomRoots.forEach((root) => root.classList.remove(ZOOM_CLASS));
+    currentZoomRoots.forEach((root) => {
+      root.classList.remove(ZOOM_CLASS);
+      root.classList.remove(THREAD_ZOOM_LAYOUT_CLASS);
+    });
     document.querySelectorAll(`.${ZOOM_CLASS}`).forEach((root) => root.classList.remove(ZOOM_CLASS));
+    document.querySelectorAll(`.${THREAD_ZOOM_LAYOUT_CLASS}`)
+      .forEach((root) => root.classList.remove(THREAD_ZOOM_LAYOUT_CLASS));
     currentZoomRoots = new Set();
     document.getElementById(ZOOM_TOAST_ID)?.remove();
     document.getElementById(ZOOM_STYLE_ID)?.remove();
@@ -350,9 +382,11 @@
     return true;
   };
 
-  updateZoomStyle();
-  window.addEventListener("keydown", onZoomKeyDown, true);
-  window.addEventListener("storage", onZoomStorage);
+  if (zoomEnabled) {
+    updateZoomStyle();
+    window.addEventListener("keydown", onZoomKeyDown, true);
+    window.addEventListener("storage", onZoomStorage);
+  }
   window[STATE_KEY] = {
     cleanup,
     disposeZoom,
@@ -361,7 +395,9 @@
     get timer() { return timer; },
     nativeFontFamily,
     get contentZoomPercent() { return contentZoomPercent; },
-    fontAvailable: fontAvailable(),
+    fontEnabled,
+    zoomEnabled,
+    fontAvailable: fontEnabled ? fontAvailable() : null,
     version,
   };
   sync();
@@ -375,8 +411,15 @@
     planCount: currentPlans.size,
     nativeUiCount: currentNativeUiRoots.size,
     contentZoomPercent,
+    fontEnabled,
+    zoomEnabled,
     fontAvailable: window[STATE_KEY].fontAvailable,
     nativeFontFamily,
     version,
   };
-})(__CHATGPT_RESTYLE_CSS_JSON__, __CHATGPT_RESTYLE_VERSION_JSON__)
+})(
+  __CHATGPT_RESTYLE_CSS_JSON__,
+  __CHATGPT_RESTYLE_VERSION_JSON__,
+  __CHATGPT_RESTYLE_FONT_ENABLED_JSON__,
+  __CHATGPT_RESTYLE_ZOOM_ENABLED_JSON__,
+)

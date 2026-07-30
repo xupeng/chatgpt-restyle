@@ -18,7 +18,8 @@ test("state is written with mode 0600 and unsafe permissions are rejected", (con
     NODE="$2"
     CHATGPT_EXE=/bin/echo
     ensure_state_root
-    write_state 54321 123 "Mon Jan 1 00:00:00 2024" "com.xupeng.chatgpt-restyle.54321" 456 "Mon Jan 1 00:00:00 2024"
+    write_state 54321 123 "Mon Jan 1 00:00:00 2024" "com.xupeng.chatgpt-restyle.54321" \
+      456 "Mon Jan 1 00:00:00 2024" false true
     state_file_is_safe
     test "$(/usr/bin/stat -f '%Lp' "$STATE_PATH")" = 600
     /bin/chmod 644 "$STATE_PATH"
@@ -33,11 +34,13 @@ test("state is written with mode 0600 and unsafe permissions are rejected", (con
     "utf8",
   ));
   assert.equal(state.port, 54321);
-  assert.equal(state.schemaVersion, 2);
+  assert.equal(state.schemaVersion, 3);
   assert.equal(state.node, process.execPath);
   assert.equal(state.injectorLabel, "com.xupeng.chatgpt-restyle.54321");
   assert.equal(state.chatgptPid, 456);
   assert.equal(state.chatgptExe, "/bin/echo");
+  assert.equal(state.fontEnabled, false);
+  assert.equal(state.zoomEnabled, true);
   assert.deepEqual(
     Object.keys(state).filter((key) => key.toLowerCase().includes("legacy")),
     [],
@@ -53,7 +56,7 @@ test("launchd labels are scoped to ChatGPT Restyle and the exact port", () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
-test("legacy state can stop without a label while schema 2 requires one", (context) => {
+test("legacy state can stop without a label while schema 2 and 3 require one", (context) => {
   const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "chatgpt-restyle-legacy-state-"));
   context.after(() => fs.rmSync(temporaryHome, { recursive: true, force: true }));
   const stateRoot = path.join(temporaryHome, "Library/Application Support/ChatGPTRestyle");
@@ -83,6 +86,50 @@ test("legacy state can stop without a label while schema 2 requires one", (conte
   const malformedCurrentResult = run();
   assert.notEqual(malformedCurrentResult.status, 0);
   assert.match(malformedCurrentResult.stderr, /injectorLabel/);
+  fs.writeFileSync(statePath, JSON.stringify({ ...state, schemaVersion: 3 }), { mode: 0o600 });
+  const malformedSchemaThreeResult = run();
+  assert.notEqual(malformedSchemaThreeResult.status, 0);
+  assert.match(malformedSchemaThreeResult.stderr, /injectorLabel/);
+});
+
+test("schema 1 and 2 default features on while schema 3 reads strict booleans", (context) => {
+  const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "chatgpt-restyle-features-"));
+  context.after(() => fs.rmSync(temporaryHome, { recursive: true, force: true }));
+  const stateRoot = path.join(temporaryHome, "Library/Application Support/ChatGPTRestyle");
+  const statePath = path.join(stateRoot, "state.json");
+  fs.mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify({ schemaVersion: 3, fontEnabled: false, zoomEnabled: true }),
+    { mode: 0o600 },
+  );
+  const result = spawnSync("/bin/bash", ["-c", `
+    source "$1"
+    NODE="$2"
+    test "$(state_feature_enabled fontEnabled 1)" = true
+    test "$(state_feature_enabled zoomEnabled 2)" = true
+    test "$(state_feature_enabled fontEnabled 3)" = false
+    test "$(state_feature_enabled zoomEnabled 3)" = true
+  `, "test", common, process.execPath], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: temporaryHome },
+  });
+  assert.equal(result.status, 0, result.stderr);
+
+  fs.writeFileSync(
+    statePath,
+    JSON.stringify({ schemaVersion: 3, fontEnabled: "false", zoomEnabled: true }),
+    { mode: 0o600 },
+  );
+  const malformed = spawnSync("/bin/bash", ["-c", `
+    source "$1"
+    NODE="$2"
+    ! state_feature_enabled fontEnabled 3
+  `, "test", common, process.execPath], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: temporaryHome },
+  });
+  assert.equal(malformed.status, 0, malformed.stderr);
 });
 
 test("injector identity matching includes PID start time, paths, and exact port", async (context) => {
@@ -93,7 +140,18 @@ test("injector identity matching includes PID start time, paths, and exact port"
     context.skip("managed sandbox does not permit process-table inspection");
     return;
   }
-  const child = spawn(process.execPath, [injector, "--watch", "--port", "54322"], {
+  const child = spawn(process.execPath, [
+    injector,
+    "--watch",
+    "--port",
+    "54322",
+    "--font-enabled",
+    "false",
+    "--zoom-enabled",
+    "true",
+    "--chatgpt-pid",
+    String(process.pid),
+  ], {
     stdio: "ignore",
   });
   context.after(() => { try { child.kill("SIGTERM"); } catch {} });
@@ -103,6 +161,8 @@ test("injector identity matching includes PID start time, paths, and exact port"
     CHATGPT_EXE=/bin/echo
     started="$(process_started_at "$2")"
     recorded_injector_matches "$2" "$started" "$3" "$4" 54322
+    recorded_injector_matches "$2" "$started" "$3" "$4" 54322 false true
+    ! recorded_injector_matches "$2" "$started" "$3" "$4" 54322 true true
     ! recorded_injector_matches "$2" "$started" "$3" "$4" 54323
     ! recorded_injector_matches "$2" "wrong start" "$3" "$4" 54322
   `, "test", common, String(child.pid), process.execPath, injector], { encoding: "utf8" });

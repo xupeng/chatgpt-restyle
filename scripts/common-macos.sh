@@ -116,18 +116,20 @@ listener_pids() {
 
 port_is_available() { [ -z "$(listener_pids "$1")" ]; }
 
-load_port_config() {
-  local line value normalized declarations=0
+load_config() {
+  local line value normalized port_declarations=0 font_declarations=0 zoom_declarations=0
   CONFIGURED_CDP_PORT=""
+  CONFIGURED_FONT_ENABLED=true
+  CONFIGURED_ZOOM_ENABLED=true
   [ -e "$PORT_CONFIG_PATH" ] || return 0
   [ -f "$PORT_CONFIG_PATH" ] && [ ! -L "$PORT_CONFIG_PATH" ] \
-    || fail "端口配置必须是普通文件且不能是符号链接：$PORT_CONFIG_PATH"
+    || fail "配置必须是普通文件且不能是符号链接：$PORT_CONFIG_PATH"
 
   while IFS= read -r line || [ -n "$line" ]; do
     if [[ "$line" =~ ^[[:space:]]*($|#) ]]; then continue; fi
     if [[ "$line" =~ ^[[:space:]]*CHATGPT_RESTYLE_PORT([[:space:]]|=|$) ]]; then
-      declarations=$((declarations + 1))
-      [ "$declarations" -eq 1 ] || fail ".env 中 CHATGPT_RESTYLE_PORT 不能重复配置。"
+      port_declarations=$((port_declarations + 1))
+      [ "$port_declarations" -eq 1 ] || fail ".env 中 CHATGPT_RESTYLE_PORT 不能重复配置。"
       if [[ "$line" =~ ^[[:space:]]*CHATGPT_RESTYLE_PORT[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$ ]]; then
         value="${BASH_REMATCH[1]}"
       else
@@ -142,6 +144,24 @@ load_port_config() {
       [ "$value" -ge 1024 ] && [ "$value" -le 65535 ] \
         || fail ".env 中 CHATGPT_RESTYLE_PORT 必须是 1024–65535 的整数。"
       CONFIGURED_CDP_PORT="$value"
+    elif [[ "$line" =~ ^[[:space:]]*CHATGPT_RESTYLE_FONT_ENABLED([[:space:]]|=|$) ]]; then
+      font_declarations=$((font_declarations + 1))
+      [ "$font_declarations" -eq 1 ] \
+        || fail ".env 中 CHATGPT_RESTYLE_FONT_ENABLED 不能重复配置。"
+      if [[ "$line" =~ ^[[:space:]]*CHATGPT_RESTYLE_FONT_ENABLED[[:space:]]*=[[:space:]]*(true|false)[[:space:]]*$ ]]; then
+        CONFIGURED_FONT_ENABLED="${BASH_REMATCH[1]}"
+      else
+        fail ".env 中 CHATGPT_RESTYLE_FONT_ENABLED 必须是 true 或 false。"
+      fi
+    elif [[ "$line" =~ ^[[:space:]]*CHATGPT_RESTYLE_ZOOM_ENABLED([[:space:]]|=|$) ]]; then
+      zoom_declarations=$((zoom_declarations + 1))
+      [ "$zoom_declarations" -eq 1 ] \
+        || fail ".env 中 CHATGPT_RESTYLE_ZOOM_ENABLED 不能重复配置。"
+      if [[ "$line" =~ ^[[:space:]]*CHATGPT_RESTYLE_ZOOM_ENABLED[[:space:]]*=[[:space:]]*(true|false)[[:space:]]*$ ]]; then
+        CONFIGURED_ZOOM_ENABLED="${BASH_REMATCH[1]}"
+      else
+        fail ".env 中 CHATGPT_RESTYLE_ZOOM_ENABLED 必须是 true 或 false。"
+      fi
     fi
   done < "$PORT_CONFIG_PATH"
 }
@@ -256,34 +276,66 @@ state_field() {
     const [file, key] = process.argv.slice(1);
     const data = JSON.parse(fs.readFileSync(file, "utf8"));
     const value = data[key];
-    if (typeof value !== "string" && typeof value !== "number") process.exit(2);
+    if (!["string", "number", "boolean"].includes(typeof value)) process.exit(2);
     process.stdout.write(String(value));
   ' "$STATE_PATH" "$key"
 }
 
+state_feature_enabled() {
+  local key="$1" schema_version="$2"
+  case "$schema_version" in
+    1|2) printf 'true\n' ;;
+    3)
+      state_file_is_safe || return 1
+      "$NODE" -e '
+        const fs = require("node:fs");
+        const [file, key] = process.argv.slice(1);
+        const value = JSON.parse(fs.readFileSync(file, "utf8"))[key];
+        if (typeof value !== "boolean") process.exit(2);
+        process.stdout.write(String(value));
+      ' "$STATE_PATH" "$key"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 write_state() {
   local port="$1" injector_pid="$2" injector_started_at="$3" injector_label="$4"
-  local chatgpt_pid="$5" chatgpt_started_at="$6"
+  local chatgpt_pid="$5" chatgpt_started_at="$6" font_enabled="$7" zoom_enabled="$8"
   local temporary="$STATE_PATH.$$.tmp"
   "$NODE" -e '
     const fs = require("node:fs");
-    const [file, port, injectorPid, injectorStartedAt, injectorLabel, chatgptPid, chatgptStartedAt, node, injector, exe] = process.argv.slice(1);
-    const state = { schemaVersion: 2, port: Number(port), injectorPid: Number(injectorPid), injectorStartedAt,
+    const [file, port, injectorPid, injectorStartedAt, injectorLabel, chatgptPid, chatgptStartedAt,
+      fontEnabled, zoomEnabled, node, injector, exe] = process.argv.slice(1);
+    if (!["true", "false"].includes(fontEnabled) || !["true", "false"].includes(zoomEnabled)) process.exit(2);
+    const state = { schemaVersion: 3, port: Number(port), injectorPid: Number(injectorPid), injectorStartedAt,
       injectorLabel, chatgptPid: Number(chatgptPid), chatgptStartedAt, node, injector, chatgptExe: exe,
+      fontEnabled: fontEnabled === "true", zoomEnabled: zoomEnabled === "true",
       createdAt: new Date().toISOString() };
     fs.writeFileSync(file, JSON.stringify(state, null, 2) + "\n", { mode: 0o600, flag: "wx" });
   ' "$temporary" "$port" "$injector_pid" "$injector_started_at" "$injector_label" \
-    "$chatgpt_pid" "$chatgpt_started_at" "$NODE" "$INJECTOR" "$CHATGPT_EXE"
+    "$chatgpt_pid" "$chatgpt_started_at" "$font_enabled" "$zoom_enabled" \
+    "$NODE" "$INJECTOR" "$CHATGPT_EXE"
   /bin/chmod 600 "$temporary"
   /bin/mv "$temporary" "$STATE_PATH"
 }
 
 recorded_injector_matches() {
   local pid="$1" expected_start="$2" expected_node="$3" expected_injector="$4" expected_port="$5"
-  local command_line actual_start
+  local expected_font="${6:-}" expected_zoom="${7:-}" command_line actual_start
   /bin/kill -0 "$pid" 2>/dev/null || return 1
   command_line="$(/bin/ps -p "$pid" -o command= 2>/dev/null || true)"
-  case "$command_line" in "$expected_node $expected_injector --watch --port $expected_port"*) ;; *) return 1 ;; esac
+  if [ -n "$expected_font" ] && [ -n "$expected_zoom" ]; then
+    case "$command_line" in
+      "$expected_node $expected_injector --watch --port $expected_port --font-enabled $expected_font --zoom-enabled $expected_zoom --chatgpt-pid "*) ;;
+      *) return 1 ;;
+    esac
+  else
+    case "$command_line" in
+      "$expected_node $expected_injector --watch --port $expected_port"*) ;;
+      *) return 1 ;;
+    esac
+  fi
   actual_start="$(process_started_at "$pid")"
   [ -n "$actual_start" ] && [ "$actual_start" = "$expected_start" ]
 }
@@ -323,6 +375,7 @@ wait_for_job_removal() {
 
 stop_recorded_injector() {
   local schema_version pid started node injector label expected_label port deadline
+  local font_enabled="" zoom_enabled=""
   [ -f "$STATE_PATH" ] || return 0
   schema_version="$(state_field schemaVersion)" || fail "state.json 中缺少 schemaVersion。"
   pid="$(state_field injectorPid)" || fail "state.json 中缺少 injectorPid。"
@@ -333,6 +386,13 @@ stop_recorded_injector() {
   case "$schema_version" in
     1) label="" ;;
     2) label="$(state_field injectorLabel)" || fail "state.json 中缺少 injectorLabel。" ;;
+    3)
+      label="$(state_field injectorLabel)" || fail "state.json 中缺少 injectorLabel。"
+      font_enabled="$(state_feature_enabled fontEnabled 3)" \
+        || fail "state.json 中缺少有效的 fontEnabled。"
+      zoom_enabled="$(state_feature_enabled zoomEnabled 3)" \
+        || fail "state.json 中缺少有效的 zoomEnabled。"
+      ;;
     *) fail "不支持的 state.json schemaVersion：$schema_version" ;;
   esac
   if [ -n "$label" ]; then
@@ -346,6 +406,7 @@ stop_recorded_injector() {
     return 0
   fi
   recorded_injector_matches "$pid" "$started" "$node" "$injector" "$port" \
+    "$font_enabled" "$zoom_enabled" \
     || fail "记录的 injector 进程身份不匹配，拒绝结束该进程。"
   if [ -n "$label" ]; then
     /bin/launchctl remove "$label" >/dev/null 2>&1 || /bin/kill -TERM "$pid"
@@ -356,6 +417,7 @@ stop_recorded_injector() {
   while /bin/kill -0 "$pid" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do /bin/sleep 0.2; done
   if /bin/kill -0 "$pid" 2>/dev/null; then
     recorded_injector_matches "$pid" "$started" "$node" "$injector" "$port" \
+      "$font_enabled" "$zoom_enabled" \
       || fail "injector 未按时退出且进程身份已变化，拒绝强制结束。"
     /bin/kill -KILL "$pid"
     deadline=$((SECONDS + 3))
@@ -367,7 +429,8 @@ stop_recorded_injector() {
 }
 
 launch_injector() {
-  local port="$1" chatgpt_pid="$2" label pid deadline attempt
+  local port="$1" chatgpt_pid="$2" font_enabled="$3" zoom_enabled="$4"
+  local label pid deadline attempt
   : > "$INJECTOR_LOG"; : > "$INJECTOR_ERROR_LOG"
   label="$(injector_label_for_port "$port")"
   for attempt in 1 2 3; do
@@ -376,7 +439,9 @@ launch_injector() {
       # launchd can briefly reject reuse after `print` stops showing a removed submitted job.
       /bin/sleep 0.2
       if /bin/launchctl submit -l "$label" -o "$INJECTOR_LOG" -e "$INJECTOR_ERROR_LOG" -- \
-        "$NODE" "$INJECTOR" --watch --port "$port" --chatgpt-pid "$chatgpt_pid"; then
+        "$NODE" "$INJECTOR" --watch --port "$port" \
+        --font-enabled "$font_enabled" --zoom-enabled "$zoom_enabled" \
+        --chatgpt-pid "$chatgpt_pid"; then
         deadline=$((SECONDS + 5))
         while [ "$SECONDS" -lt "$deadline" ]; do
           pid="$(submitted_job_pid "$label")"
