@@ -63,7 +63,25 @@ ChatGPT Restyle 可以统一缩放对话正文、Markdown 文件正文和 Plan �
 缩放范围为 60%–160%。当前比例会短暂显示在页面底部，并由 ChatGPT 的本地存储
 保存；所有任务、正文区域和标签页共用同一比例，刷新或重启后仍会保留。
 `Restore.command` 只移除当前注入效果，不删除已保存的比例。ChatGPT 原有的
-`Command` + `+` / `-` 整窗缩放快捷键保持不变。
+`Command` + `+` / `-` 整窗缩放快捷键保持不变。缩放只改变正文内容的显示比例和
+换行，不会扩大对话、Markdown 预览或 Plan 正文列的视觉宽度。
+
+## 功能开关
+
+可以在项目根目录的 `.env` 中分别启用或关闭整套自定义排版与正文缩放：
+
+```dotenv
+CHATGPT_RESTYLE_FONT_ENABLED=true
+CHATGPT_RESTYLE_ZOOM_ENABLED=true
+```
+
+两个配置缺省时均为 `true`，且只接受小写的 `true` 或 `false`。字体开关控制
+字体、字号、字重、行高、间距和代码样式；缩放开关控制正文 zoom、快捷键和比例
+Toast。关闭缩放不会删除已保存在 ChatGPT localStorage 中的比例。
+
+修改功能开关后，再次运行 Apply 或 Raycast 命令即可在当前 CDP 会话生效；
+ChatGPT 不会重启。后台 watcher 会在配置变化时原地更新，继续处理页面重载和
+任务切换。
 
 ## 配置固定端口
 
@@ -76,7 +94,7 @@ CHATGPT_RESTYLE_PORT=54321
 
 端口必须是 `1024–65535` 中当前未被占用的整数。配置无效、重复或端口已被占用时，
 Apply 会明确报错，不会回退到随机端口。`.env` 只在新的 ChatGPT Restyle 会话启动
-时决定端口；已有会话会继续使用当前端口，修改后的配置将在下次启动时生效。
+时决定端口；已有会话会继续使用当前端口，修改后的端口将在下次启动时生效。
 
 ## 常见问题
 
@@ -150,8 +168,8 @@ doctor 会检查项目文件、Shell/Node 语法、ChatGPT App 签名和内置 N
 Plan 标签页的 Markdown 正文：
 
 ```text
-main.main-surface .thread-scroll-container
-main.main-surface [role="tabpanel"][aria-label$=".md"] .cm-editor
+main[data-app-shell-main-surface] .thread-scroll-container
+main[data-app-shell-main-surface] [role="tabpanel"][aria-label$=".md"] .cm-editor
 [role="tabpanel"][aria-label="Plan"] [class*="_markdownContent_"].text-size-chat
 ```
 

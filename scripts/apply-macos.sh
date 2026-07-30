@@ -6,9 +6,10 @@ set -euo pipefail
 ensure_state_root
 discover_chatgpt_app
 require_macos_runtime
-load_port_config
+load_config
 
 if [ -f "$STATE_PATH" ]; then
+  schema_version="$(state_field schemaVersion)" || fail "现有 state.json 缺少 schemaVersion。"
   port="$(state_field port)" || fail "现有 state.json 不安全或已损坏。"
   injector_pid="$(state_field injectorPid)" || fail "现有 state.json 缺少 injectorPid。"
   injector_started="$(state_field injectorStartedAt)" || fail "现有 state.json 缺少 injectorStartedAt。"
@@ -17,10 +18,37 @@ if [ -f "$STATE_PATH" ]; then
   saved_chatgpt_pid="$(state_field chatgptPid)" || fail "现有 state.json 缺少 chatgptPid。"
   saved_chatgpt_started="$(state_field chatgptStartedAt)" || fail "现有 state.json 缺少 chatgptStartedAt。"
   saved_chatgpt_exe="$(state_field chatgptExe)" || fail "现有 state.json 缺少 chatgptExe。"
+  saved_font_enabled="$(state_feature_enabled fontEnabled "$schema_version")" \
+    || fail "现有 state.json 缺少有效的 fontEnabled。"
+  saved_zoom_enabled="$(state_feature_enabled zoomEnabled "$schema_version")" \
+    || fail "现有 state.json 缺少有效的 zoomEnabled。"
+  identity_font_enabled=""
+  identity_zoom_enabled=""
+  if [ "$schema_version" -eq 3 ]; then
+    identity_font_enabled="$saved_font_enabled"
+    identity_zoom_enabled="$saved_zoom_enabled"
+  fi
   if verified_cdp_endpoint "$port" \
     && recorded_chatgpt_matches "$saved_chatgpt_pid" "$saved_chatgpt_started" "$saved_chatgpt_exe" \
-    && recorded_injector_matches "$injector_pid" "$injector_started" "$saved_node" "$saved_injector" "$port"; then
-    "$NODE" "$INJECTOR" --once --port "$port"
+    && recorded_injector_matches "$injector_pid" "$injector_started" \
+      "$saved_node" "$saved_injector" "$port" \
+      "$identity_font_enabled" "$identity_zoom_enabled"; then
+    if [ "$schema_version" -ne 3 ] \
+      || [ "$saved_font_enabled" != "$CONFIGURED_FONT_ENABLED" ] \
+      || [ "$saved_zoom_enabled" != "$CONFIGURED_ZOOM_ENABLED" ]; then
+      stop_recorded_injector
+      read -r injector_pid injector_label < <(
+        launch_injector "$port" "$saved_chatgpt_pid" \
+          "$CONFIGURED_FONT_ENABLED" "$CONFIGURED_ZOOM_ENABLED"
+      )
+      injector_started="$(process_started_at "$injector_pid")"
+      write_state "$port" "$injector_pid" "$injector_started" "$injector_label" \
+        "$saved_chatgpt_pid" "$saved_chatgpt_started" \
+        "$CONFIGURED_FONT_ENABLED" "$CONFIGURED_ZOOM_ENABLED"
+    fi
+    "$NODE" "$INJECTOR" --once --port "$port" \
+      --font-enabled "$CONFIGURED_FONT_ENABLED" \
+      --zoom-enabled "$CONFIGURED_ZOOM_ENABLED"
     printf 'ChatGPT Restyle 已重新应用；当前端口：%s\n' "$port"
     if [ -n "$CONFIGURED_CDP_PORT" ] && [ "$CONFIGURED_CDP_PORT" -ne "$port" ]; then
       printf '提示：.env 配置端口 %s 将在下次 ChatGPT Restyle 会话启动时生效。\n' \
@@ -58,12 +86,18 @@ fi
 chatgpt_pid="$(chatgpt_pid_for_port "$port")" \
   || fail "无法确定持有 CDP 端口 $port 的 ChatGPT 主进程。"
 chatgpt_started="$(process_started_at "$chatgpt_pid")"
-read -r injector_pid injector_label < <(launch_injector "$port" "$chatgpt_pid")
+read -r injector_pid injector_label < <(
+  launch_injector "$port" "$chatgpt_pid" \
+    "$CONFIGURED_FONT_ENABLED" "$CONFIGURED_ZOOM_ENABLED"
+)
 injector_started="$(process_started_at "$injector_pid")"
 write_state "$port" "$injector_pid" "$injector_started" "$injector_label" \
-  "$chatgpt_pid" "$chatgpt_started"
+  "$chatgpt_pid" "$chatgpt_started" \
+  "$CONFIGURED_FONT_ENABLED" "$CONFIGURED_ZOOM_ENABLED"
 
-if ! "$NODE" "$INJECTOR" --once --port "$port" --timeout-ms 20000; then
+if ! "$NODE" "$INJECTOR" --once --port "$port" \
+  --font-enabled "$CONFIGURED_FONT_ENABLED" \
+  --zoom-enabled "$CONFIGURED_ZOOM_ENABLED" --timeout-ms 20000; then
   stop_recorded_injector || true
   /bin/rm -f "$STATE_PATH"
   fail "排版注入验证失败，请查看 $INJECTOR_ERROR_LOG"

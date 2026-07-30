@@ -36,34 +36,38 @@ test("random ports stay in the IANA dynamic range and are not constant", () => {
   assert.ok(new Set(ports).size > 1, "port selection must not be a fixed value");
 });
 
-test("uses a configured port while ignoring comments, blanks, and unrelated keys", (t) => {
+test("loads configured port and feature switches while ignoring unrelated keys", (t) => {
   const projectRoot = withConfig(t, `
 # Local settings
 OTHER_SETTING=value
 
   CHATGPT_RESTYLE_PORT = 054321
+  CHATGPT_RESTYLE_FONT_ENABLED = false
+  CHATGPT_RESTYLE_ZOOM_ENABLED = true
 `);
   const result = runPortScript(projectRoot, `
     port_is_available() { return 0; }
-    load_port_config
+    load_config
     select_cdp_port
-    printf '%s %s' "$SELECTED_CDP_PORT_SOURCE" "$SELECTED_CDP_PORT"
+    printf '%s %s %s %s' "$SELECTED_CDP_PORT_SOURCE" "$SELECTED_CDP_PORT" \
+      "$CONFIGURED_FONT_ENABLED" "$CONFIGURED_ZOOM_ENABLED"
   `);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout, "configured 54321");
+  assert.equal(result.stdout, "configured 54321 false true");
 });
 
-test("uses a random port when the config file or key is absent", (t) => {
+test("uses a random port and enables both features when config keys are absent", (t) => {
   for (const contents of [null, "OTHER_SETTING=value\n"]) {
     const projectRoot = withConfig(t, contents);
     const result = runPortScript(projectRoot, `
       generate_random_port() { printf '60000\\n'; }
-      load_port_config
+      load_config
       select_cdp_port
-      printf '%s %s' "$SELECTED_CDP_PORT_SOURCE" "$SELECTED_CDP_PORT"
+      printf '%s %s %s %s' "$SELECTED_CDP_PORT_SOURCE" "$SELECTED_CDP_PORT" \
+        "$CONFIGURED_FONT_ENABLED" "$CONFIGURED_ZOOM_ENABLED"
     `);
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout, "random 60000");
+    assert.equal(result.stdout, "random 60000 true true");
   }
 });
 
@@ -75,9 +79,34 @@ for (const [name, contents] of [
   ["duplicate", "CHATGPT_RESTYLE_PORT=54321\nCHATGPT_RESTYLE_PORT=54322\n"],
 ]) {
   test(`rejects ${name} fixed-port configuration`, (t) => {
-    const result = runPortScript(withConfig(t, contents), "load_port_config");
+    const result = runPortScript(withConfig(t, contents), "load_config");
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /CHATGPT_RESTYLE_PORT/);
+  });
+}
+
+for (const [key, invalidValues] of [
+  ["CHATGPT_RESTYLE_FONT_ENABLED", ["", "1", "TRUE", "yes"]],
+  ["CHATGPT_RESTYLE_ZOOM_ENABLED", ["", "0", "False", "no"]],
+]) {
+  for (const value of invalidValues) {
+    test(`rejects ${key}=${value || "<empty>"}`, (t) => {
+      const result = runPortScript(
+        withConfig(t, `${key}=${value}\n`),
+        "load_config",
+      );
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, new RegExp(key));
+    });
+  }
+
+  test(`rejects duplicate ${key}`, (t) => {
+    const result = runPortScript(
+      withConfig(t, `${key}=true\n${key}=false\n`),
+      "load_config",
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, new RegExp(`${key}.*不能重复`));
   });
 }
 
@@ -86,7 +115,7 @@ test("rejects an occupied configured port without falling back to random", (t) =
   const result = runPortScript(projectRoot, `
     port_is_available() { return 1; }
     generate_random_port() { printf '60000\\n'; }
-    load_port_config
+    load_config
     select_cdp_port
   `);
   assert.notEqual(result.status, 0);
