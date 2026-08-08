@@ -169,6 +169,9 @@ Plan 标签页的 Markdown 正文：
 
 ```text
 main[data-app-shell-main-surface] .thread-scroll-container
+  [data-user-message-bubble="true"] [class*="_MarkdownRoot_"]
+main[data-app-shell-main-surface] .thread-scroll-container
+  [data-markdown-text-style="assistant-message"]
 main[data-app-shell-main-surface] [role="tabpanel"][aria-label$=".md"] .cm-editor
 [role="tabpanel"][aria-label="Plan"] [class*="_markdownContent_"].text-size-chat
 ```

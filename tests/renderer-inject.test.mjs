@@ -16,6 +16,11 @@ const THREAD_ZOOM_LAYOUT_CLASS = "chatgpt-restyle-content-zoom-thread-layout";
 const ZOOM_STYLE_ID = "chatgpt-restyle-content-zoom-style";
 const ZOOM_TOAST_ID = "chatgpt-restyle-content-zoom-toast";
 const ZOOM_STORAGE_KEY = "chatgpt-restyle.contentZoomPercent.v1";
+const MESSAGE_CLASS = "chatgpt-chat-typography-message";
+const MESSAGE_SELECTOR = [
+  '[data-user-message-bubble="true"] [class*="_MarkdownRoot_"]',
+  '[data-markdown-text-style="assistant-message"]',
+].join(", ");
 
 function styleDeclaration() {
   const values = new Map();
@@ -62,6 +67,8 @@ function fixture({
     style: styleDeclaration(),
   };
   const threadCode = {};
+  const userMessage = { classList: classList(), style: styleDeclaration() };
+  const assistantMessage = { classList: classList(), style: styleDeclaration() };
   const previewCode = {};
   const planCode = {};
   const makeThreadContent = () => ({
@@ -83,12 +90,14 @@ function fixture({
       if (selector === ':scope > * > [data-thread-scroll-footer="true"]') {
         return threadFooter;
       }
+      if (selector === MESSAGE_SELECTOR) return assistantMessage;
       return selector === "pre code, code, kbd, samp, .inline-markdown, .cm-markdown-code-line"
         && withCodeSamples
         ? threadCode
         : null;
     },
     querySelectorAll(selector) {
+      if (selector === MESSAGE_SELECTOR) return [userMessage, assistantMessage];
       return selector === '.vertical-scroll-fade-mask.hide-scrollbar[class*="max-h-[30dvh]"]'
         && withQueuedMessages
         ? [queuedMessages]
@@ -175,6 +184,10 @@ function fixture({
       if (selector === ".chatgpt-chat-typography-thread") {
         return thread.classList.contains(selector.slice(1)) ? [thread] : [];
       }
+      if (selector === `.${MESSAGE_CLASS}`) {
+        return [userMessage, assistantMessage]
+          .filter((message) => message.classList.contains(MESSAGE_CLASS));
+      }
       if (selector === ".chatgpt-chat-typography-markdown-preview") {
         return markdownFileEditor.classList.contains(selector.slice(1))
           ? [markdownFileEditor]
@@ -228,6 +241,9 @@ function fixture({
       if (node === previewCode) return { fontFamily: '"Monaco", monospace' };
       if (node === planCode) return { fontFamily: 'ui-monospace, monospace' };
       if (node === thread) return { fontFamily: '-apple-system, "PingFang SC", sans-serif' };
+      if (node === assistantMessage) {
+        return { fontFamily: '-apple-system, "PingFang SC", sans-serif' };
+      }
       if (node === planContent) return { fontFamily: '-apple-system, "system-ui", sans-serif' };
       assert.equal(node, markdownFileEditor);
       return { fontFamily: 'Inter, -apple-system, sans-serif' };
@@ -272,6 +288,8 @@ function fixture({
     queuedMessages,
     sidebar,
     thread,
+    userMessage,
+    assistantMessage,
     threadFooter,
     storage,
     timers,
@@ -308,7 +326,10 @@ test("CSS is scoped to the conversation and current Markdown file editor", () =>
   assert.match(css, /--chat-code-surface:\s*color-mix/);
   assert.match(css, /--chat-code-border-color:\s*color-mix/);
   assert.match(css, /"LXGW WenKai Screen"/);
-  assert.match(css, /\[data-message-author-role\], article/);
+  assert.match(css, /\.chatgpt-chat-typography-message/);
+  assert.match(template, /\[data-user-message-bubble="true"\]/);
+  assert.match(template, /\[data-markdown-text-style="assistant-message"\]/);
+  assert.doesNotMatch(css, /\[data-message-author-role\]|\[class\*="_markdown"\]/);
   assert.match(css, /\.cm-editor/);
   assert.match(css, /\.cm-scroller, \.cm-content, \.cm-line/);
   assert.doesNotMatch(css, /Songti|STSong/i);
@@ -593,6 +614,8 @@ test("injects once, captures native fonts, and leaves sidebar untouched", () => 
   assert.equal(result.threadFound, true);
   assert.equal(result.fontAvailable, true);
   assert.equal(current.thread.classList.contains("chatgpt-chat-typography-thread"), true);
+  assert.equal(current.userMessage.classList.contains(MESSAGE_CLASS), true);
+  assert.equal(current.assistantMessage.classList.contains(MESSAGE_CLASS), true);
   assert.equal(
     current.thread.style.values.get("--chat-native-font-family"),
     '-apple-system, "PingFang SC", sans-serif',
@@ -628,6 +651,8 @@ test("reports a missing font and cleanup fully detaches the thread", () => {
   assert.equal(result.fontAvailable, false);
   assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.cleanup(), true);
   assert.equal(current.thread.classList.contains("chatgpt-chat-typography-thread"), false);
+  assert.equal(current.userMessage.classList.contains(MESSAGE_CLASS), false);
+  assert.equal(current.assistantMessage.classList.contains(MESSAGE_CLASS), false);
   assert.equal(current.thread.style.values.has("--chat-native-font-family"), false);
   assert.equal(current.thread.style.values.has("--chat-native-code-font-family"), false);
   assert.equal(current.nodes.size, 0);
@@ -643,6 +668,8 @@ test("font can be disabled while zoom remains active", () => {
   assert.equal(result.fontAvailable, null);
   assert.equal(current.nodes.has("chatgpt-chat-typography-style"), false);
   assert.equal(current.thread.classList.contains("chatgpt-chat-typography-thread"), false);
+  assert.equal(current.userMessage.classList.contains(MESSAGE_CLASS), false);
+  assert.equal(current.assistantMessage.classList.contains(MESSAGE_CLASS), false);
   assert.equal(current.thread.style.values.size, 0);
   assert.equal(current.threadContent.classList.contains(ZOOM_CLASS), true);
   assert.equal(
@@ -721,6 +748,8 @@ test("both features can be disabled without changing the renderer", () => {
   assert.equal(result.zoomEnabled, false);
   assert.equal(current.nodes.size, 0);
   assert.equal(current.thread.classList.values.size, 0);
+  assert.equal(current.userMessage.classList.values.size, 0);
+  assert.equal(current.assistantMessage.classList.values.size, 0);
   assert.equal(current.thread.style.values.size, 0);
   assert.equal(current.threadContent.classList.values.size, 0);
   assert.equal(current.listeners.size, 0);
@@ -740,6 +769,8 @@ test("reapply fully removes artifacts from features that become disabled", () =>
   assert.equal(result.zoomEnabled, false);
   assert.equal(current.nodes.size, 0);
   assert.equal(current.thread.classList.values.size, 0);
+  assert.equal(current.userMessage.classList.values.size, 0);
+  assert.equal(current.assistantMessage.classList.values.size, 0);
   assert.equal(current.thread.style.values.size, 0);
   assert.equal(current.threadContent.classList.contains(ZOOM_CLASS), false);
   assert.equal(
