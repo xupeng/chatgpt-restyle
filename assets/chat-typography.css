@@ -62,14 +62,14 @@
 }
 
 .chatgpt-chat-typography-thread
-  :where([data-message-author-role], article, [class*="_markdown"]):not(
+  .chatgpt-chat-typography-message:not(
     .chatgpt-chat-typography-native-ui *
   ) {
   font-weight: var(--chat-font-weight) !important;
 }
 
 .chatgpt-chat-typography-thread
-  :where([data-message-author-role], article, [class*="_markdown"])
+  .chatgpt-chat-typography-message
   :not(.chatgpt-chat-typography-native-ui *) {
   font-family: var(--chat-font-family), var(--chat-native-font-family) !important;
   font-size: var(--chat-font-size) !important;
@@ -77,7 +77,7 @@
 }
 
 .chatgpt-chat-typography-thread
-  :where([data-message-author-role], article, [class*="_markdown"])
+  .chatgpt-chat-typography-message
   :not(.chatgpt-chat-typography-native-ui *)
   :where(p, li, blockquote, td, th) {
   font-family: inherit;
@@ -95,13 +95,7 @@
 }
 
 .chatgpt-chat-typography-thread
-  [data-message-author-role]:not(.chatgpt-chat-typography-native-ui *)
-  + [data-message-author-role]:not(.chatgpt-chat-typography-native-ui *) {
-  margin-top: var(--chat-message-gap) !important;
-}
-
-.chatgpt-chat-typography-thread
-  :where([data-message-author-role], article, [class*="_markdown"])
+  .chatgpt-chat-typography-message
   :not(.chatgpt-chat-typography-native-ui *)
   :where(pre, code, kbd, samp, .inline-markdown) {
   font-family: var(--chat-code-font-family) !important;

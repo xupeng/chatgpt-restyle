@@ -2,6 +2,7 @@
   const STATE_KEY = "__CHATGPT_CHAT_TYPOGRAPHY_STATE__";
   const STYLE_ID = "chatgpt-chat-typography-style";
   const THREAD_CLASS = "chatgpt-chat-typography-thread";
+  const MESSAGE_CLASS = "chatgpt-chat-typography-message";
   const PREVIEW_CLASS = "chatgpt-chat-typography-markdown-preview";
   const PLAN_CLASS = "chatgpt-chat-typography-plan";
   const NATIVE_UI_CLASS = "chatgpt-chat-typography-native-ui";
@@ -16,6 +17,10 @@
   const ZOOM_STEP_PERCENT = 10;
   const MAIN_SURFACE_SELECTOR = "main[data-app-shell-main-surface]";
   const THREAD_SELECTOR = `${MAIN_SURFACE_SELECTOR} .thread-scroll-container`;
+  const MESSAGE_SELECTOR = [
+    '[data-user-message-bubble="true"] [class*="_MarkdownRoot_"]',
+    '[data-markdown-text-style="assistant-message"]',
+  ].join(", ");
   const THREAD_FOOTER_SELECTOR =
     ':scope > * > [data-thread-scroll-footer="true"]';
   const QUEUED_MESSAGES_SELECTOR =
@@ -39,6 +44,7 @@
 
   let nativeFontFamily = fontEnabled ? previousNativeFontFamily : null;
   let currentThread = null;
+  let currentMessages = new Set();
   let currentPreviews = new Set();
   let currentPlans = new Set();
   let currentNativeUiRoots = new Set();
@@ -194,6 +200,8 @@
     thread.style.removeProperty("--chat-native-code-font-family");
   };
 
+  const detachMessage = (message) => message?.classList.remove(MESSAGE_CLASS);
+
   const detachPreview = (preview) => {
     if (!preview) return;
     preview.classList.remove(PREVIEW_CLASS);
@@ -217,6 +225,10 @@
       return MARKDOWN_FILE_EXTENSION.test(panel?.getAttribute?.("aria-label") || "");
     });
   };
+
+  const findMessages = (thread) => thread?.querySelectorAll
+    ? Array.from(thread.querySelectorAll(MESSAGE_SELECTOR))
+    : [];
 
   const detachNativeUi = (root) => root?.classList.remove(NATIVE_UI_CLASS);
 
@@ -278,9 +290,7 @@
       nativeFontFamily = thread.style.getPropertyValue?.("--chat-native-font-family") || null;
     }
     if (fontEnabled && thread && !nativeFontFamily) {
-      const nativeSample = thread.querySelector?.(
-        '[data-message-author-role], article, [class*="_markdown"]',
-      ) || thread;
+      const nativeSample = thread.querySelector?.(MESSAGE_SELECTOR) || thread;
       nativeFontFamily = getComputedStyle(nativeSample).fontFamily;
     }
     if (fontEnabled && thread) {
@@ -289,6 +299,13 @@
       thread.classList.add(THREAD_CLASS);
     }
     else detach(thread);
+
+    const messages = new Set(fontEnabled ? findMessages(thread) : []);
+    for (const message of currentMessages) {
+      if (!messages.has(message)) detachMessage(message);
+    }
+    messages.forEach((message) => message.classList.add(MESSAGE_CLASS));
+    currentMessages = messages;
 
     const nativeUiRoots = new Set(fontEnabled ? findNativeUiRoots(thread) : []);
     for (const root of currentNativeUiRoots) {
@@ -370,10 +387,12 @@
     if (timer) clearTimeout(timer);
     disposeZoom();
     detach(currentThread);
+    currentMessages.forEach(detachMessage);
     currentPreviews.forEach(detachPreview);
     currentPlans.forEach(detachPlan);
     currentNativeUiRoots.forEach(detachNativeUi);
     document.querySelectorAll(`.${THREAD_CLASS}`).forEach(detach);
+    document.querySelectorAll(`.${MESSAGE_CLASS}`).forEach(detachMessage);
     document.querySelectorAll(`.${PREVIEW_CLASS}`).forEach(detachPreview);
     document.querySelectorAll(`.${PLAN_CLASS}`).forEach(detachPlan);
     document.querySelectorAll(`.${NATIVE_UI_CLASS}`).forEach(detachNativeUi);
