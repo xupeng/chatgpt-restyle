@@ -172,8 +172,9 @@ main[data-app-shell-main-surface] .thread-scroll-container
   [data-user-message-bubble="true"] [class*="_MarkdownRoot_"]
 main[data-app-shell-main-surface] .thread-scroll-container
   [data-markdown-text-style="assistant-message"]
-main[data-app-shell-main-surface] [role="tabpanel"][aria-label$=".md"] .cm-editor
-[role="tabpanel"][aria-label="Plan"] [class*="_markdownContent_"].text-size-chat
+[role="tabpanel"][data-app-shell-tab-panel-controller="right"][aria-label$=".md"] .cm-editor
+[role="tabpanel"][aria-label="Plan"]
+  [data-plan-selection-surface] [class*="_MarkdownRoot_"].text-size-chat
 ```
 
 ChatGPT 更新后如果该结构变化，需要根据当前 renderer DOM 更新选择器和测试。

@@ -26,10 +26,11 @@
   const QUEUED_MESSAGES_SELECTOR =
     '.vertical-scroll-fade-mask.hide-scrollbar[class*="max-h-[30dvh]"]';
   const MARKDOWN_FILE_EDITOR_SELECTOR =
-    `${MAIN_SURFACE_SELECTOR} [role="tabpanel"][aria-label] .cm-editor`;
+    '[role="tabpanel"][data-app-shell-tab-panel-controller="right"][aria-label] .cm-editor';
   const MARKDOWN_FILE_EXTENSION = /\.(?:md|markdown)$/i;
   const PLAN_PANEL_SELECTOR = '[role="tabpanel"][aria-label="Plan"]';
-  const PLAN_CONTENT_SELECTOR = '[class*="_markdownContent_"].text-size-chat';
+  const PLAN_CONTENT_SELECTOR =
+    '[data-plan-selection-surface] [class*="_MarkdownRoot_"].text-size-chat';
   const CODE_SELECTOR =
     "pre code, code, kbd, samp, .inline-markdown, .cm-markdown-code-line";
 
