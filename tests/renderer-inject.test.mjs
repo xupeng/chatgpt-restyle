@@ -49,6 +49,7 @@ function fixture({
   previewInsideThread = false,
   withMarkdownFileEditor = false,
   markdownFilename = "README.md",
+  markdownPanelController = "right",
   withPlan = false,
   planAriaLabel = "Plan",
   withQueuedMessages = false,
@@ -141,7 +142,10 @@ function fixture({
   const planPanel = {
     getAttribute(name) { return name === "aria-label" ? planAriaLabel : null; },
     querySelector(selector) {
-      return selector === '[class*="_markdownContent_"].text-size-chat' ? planContent : null;
+      return selector
+        === '[data-plan-selection-surface] [class*="_MarkdownRoot_"].text-size-chat'
+        ? planContent
+        : null;
     },
   };
   const sidebar = { classList: classList(), style: styleDeclaration() };
@@ -174,9 +178,11 @@ function fixture({
     querySelectorAll(selector) {
       if (
         selector
-        === 'main[data-app-shell-main-surface] [role="tabpanel"][aria-label] .cm-editor'
+        === '[role="tabpanel"][data-app-shell-tab-panel-controller="right"][aria-label] .cm-editor'
       ) {
-        return withMarkdownFileEditor ? [markdownFileEditor] : [];
+        return withMarkdownFileEditor && markdownPanelController === "right"
+          ? [markdownFileEditor]
+          : [];
       }
       if (selector === '[role="tabpanel"][aria-label="Plan"]') {
         return withPlan && planAriaLabel === "Plan" ? [planPanel] : [];
@@ -327,11 +333,16 @@ test("CSS is scoped to the conversation and current Markdown file editor", () =>
   assert.match(css, /--chat-code-border-color:\s*color-mix/);
   assert.match(css, /"LXGW WenKai Screen"/);
   assert.match(css, /\.chatgpt-chat-typography-message/);
-  assert.match(template, /\[data-user-message-bubble="true"\]/);
-  assert.match(template, /\[data-markdown-text-style="assistant-message"\]/);
-  assert.doesNotMatch(css, /\[data-message-author-role\]|\[class\*="_markdown"\]/);
   assert.match(css, /\.cm-editor/);
   assert.match(css, /\.cm-scroller, \.cm-content, \.cm-line/);
+  assert.match(template, /\[data-user-message-bubble="true"\]/);
+  assert.match(template, /\[data-markdown-text-style="assistant-message"\]/);
+  assert.match(template, /\[data-app-shell-tab-panel-controller="right"\]/);
+  assert.match(template, /\.cm-editor/);
+  assert.match(template, /\[data-plan-selection-surface\]/);
+  assert.match(template, /\[class\*="_MarkdownRoot_"\]\.text-size-chat/);
+  assert.doesNotMatch(css, /\[data-message-author-role\]|\[class\*="_markdown"\]/);
+  assert.doesNotMatch(template, /_markdownContent_/);
   assert.doesNotMatch(css, /Songti|STSong/i);
   assert.doesNotMatch(css, /(?:^|\n)\s*(?:html|body|main|:root)\b/);
 });
@@ -384,6 +395,17 @@ test("does not treat conversation Markdown as a file preview", () => {
 test("does not style a non-Markdown file editor", () => {
   const current = fixture({
     markdownFilename: "package.json",
+    withMarkdownFileEditor: true,
+  });
+  const result = vm.runInNewContext(current.payload, current.context);
+  assert.equal(result.previewCount, 0);
+  assert.equal(current.markdownFileEditor.classList.values.size, 0);
+  assert.equal(current.markdownFileEditor.style.values.size, 0);
+});
+
+test("does not style a Markdown editor outside the right panel", () => {
+  const current = fixture({
+    markdownPanelController: "main",
     withMarkdownFileEditor: true,
   });
   const result = vm.runInNewContext(current.payload, current.context);
