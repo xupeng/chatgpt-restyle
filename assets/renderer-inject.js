@@ -1,6 +1,7 @@
 ((cssText, version, fontEnabled, zoomEnabled) => {
   const STATE_KEY = "__CHATGPT_CHAT_TYPOGRAPHY_STATE__";
   const STYLE_ID = "chatgpt-chat-typography-style";
+  const ROOT_CLASS = "chatgpt-restyle-font-root";
   const THREAD_CLASS = "chatgpt-chat-typography-thread";
   const MESSAGE_CLASS = "chatgpt-chat-typography-message";
   const PREVIEW_CLASS = "chatgpt-chat-typography-markdown-preview";
@@ -75,6 +76,7 @@
 
   const ensureStyle = () => {
     if (!fontEnabled) {
+      document.documentElement.classList.remove(ROOT_CLASS);
       document.getElementById(STYLE_ID)?.remove();
       return;
     }
@@ -86,6 +88,7 @@
     }
     if (style.textContent !== cssText) style.textContent = cssText;
     style.dataset.chatgptRestyleVersion = version;
+    document.documentElement.classList.add(ROOT_CLASS);
   };
 
   const updateZoomStyle = () => {
@@ -188,10 +191,24 @@
 
   const fontAvailable = () => {
     try {
-      return document.fonts?.check('16px "LXGW WenKai Screen"') ?? false;
+      return (document.fonts?.check('16px "Oxanium"')
+        && document.fonts.check('16px "LXGW WenKai Screen"')) ?? false;
     } catch {
       return false;
     }
+  };
+
+  const refreshFontAvailability = () => {
+    const state = window[STATE_KEY];
+    if (!fontEnabled || !state || typeof document.fonts?.load !== "function") return;
+    Promise.all([
+      document.fonts.load('16px "Oxanium"'),
+      document.fonts.load('16px "LXGW WenKai Screen"'),
+    ]).then(() => {
+      if (window[STATE_KEY] === state) state.fontAvailable = fontAvailable();
+    }).catch(() => {
+      if (window[STATE_KEY] === state) state.fontAvailable = false;
+    });
   };
 
   const detach = (thread) => {
@@ -398,6 +415,7 @@
     document.querySelectorAll(`.${PLAN_CLASS}`).forEach(detachPlan);
     document.querySelectorAll(`.${NATIVE_UI_CLASS}`).forEach(detachNativeUi);
     document.getElementById(STYLE_ID)?.remove();
+    document.documentElement.classList.remove(ROOT_CLASS);
     if (window[STATE_KEY]?.cleanup === cleanup) delete window[STATE_KEY];
     return true;
   };
@@ -422,6 +440,7 @@
   };
   sync();
   window[STATE_KEY].nativeFontFamily = nativeFontFamily;
+  refreshFontAvailability();
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
   return {

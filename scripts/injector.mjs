@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
+import { Buffer } from "node:buffer";
 import { watch as watchFs } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -12,6 +13,11 @@ const TARGET_ID = /^[A-Za-z0-9._-]{1,200}$/;
 const STATE_KEY = "__CHATGPT_CHAT_TYPOGRAPHY_STATE__";
 const MAIN_SURFACE_SELECTOR = "main[data-app-shell-main-surface]";
 const SIDEBAR_SELECTOR = "aside.app-shell-left-panel";
+const GOOGLE_FONT_CSS_URL =
+  "https://fonts.googleapis.com/css2?family=Oxanium:wght@200..800&display=swap";
+const GOOGLE_FONT_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+  + "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 const RUNTIME_STATE_PATH = process.env.HOME
   ? path.join(
     process.env.HOME,
@@ -259,29 +265,63 @@ async function connectChatGPTTargets(port, timeoutMs) {
   throw new Error(`No verified ChatGPT renderer: ${lastError.message}`);
 }
 
-export async function buildPayload(options) {
+export async function inlineGoogleFontCss(fetchImpl = fetch) {
+  const stylesheetResponse = await fetchImpl(GOOGLE_FONT_CSS_URL, {
+    headers: { "user-agent": GOOGLE_FONT_USER_AGENT },
+  });
+  if (!stylesheetResponse.ok) {
+    throw new Error(`Google Fonts CSS request failed: HTTP ${stylesheetResponse.status}`);
+  }
+  let stylesheet = await stylesheetResponse.text();
+  const urls = [...new Set(stylesheet.match(/https:\/\/fonts\.gstatic\.com\/[^)\s]+/g) || [])];
+  if (!urls.length) throw new Error("Google Fonts CSS did not contain a font URL");
+  const embedded = await Promise.all(urls.map(async (url) => {
+    const fontResponse = await fetchImpl(url);
+    if (!fontResponse.ok) {
+      throw new Error(`Google Font request failed: HTTP ${fontResponse.status}`);
+    }
+    const mimeType = fontResponse.headers.get("content-type") || "font/woff2";
+    const data = Buffer.from(await fontResponse.arrayBuffer()).toString("base64");
+    return [url, `data:${mimeType};base64,${data}`];
+  }));
+  for (const [url, dataUrl] of embedded) stylesheet = stylesheet.replaceAll(url, dataUrl);
+  return stylesheet;
+}
+
+let googleFontCssPromise = null;
+const onlineFontCss = () => {
+  googleFontCssPromise ||= inlineGoogleFontCss();
+  return googleFontCssPromise;
+};
+
+export async function buildPayload(options, fontCss = "") {
   const [css, template] = await Promise.all([
     fs.readFile(path.join(root, "assets", "chat-typography.css"), "utf8"),
     fs.readFile(path.join(root, "assets", "renderer-inject.js"), "utf8"),
   ]);
+  const completeCss = fontCss ? `${fontCss}\n${css}` : css;
   const configuration = JSON.stringify({
     fontEnabled: options.fontEnabled,
     zoomEnabled: options.zoomEnabled,
   });
   const revision = createHash("sha256")
-    .update(css)
+    .update(completeCss)
     .update(template)
     .update(configuration)
     .digest("hex")
     .slice(0, 20);
   return {
     payload: template
-      .replace("__CHATGPT_RESTYLE_CSS_JSON__", JSON.stringify(css))
+      .replace("__CHATGPT_RESTYLE_CSS_JSON__", JSON.stringify(completeCss))
       .replace("__CHATGPT_RESTYLE_VERSION_JSON__", JSON.stringify(revision))
       .replace("__CHATGPT_RESTYLE_FONT_ENABLED_JSON__", JSON.stringify(options.fontEnabled))
       .replace("__CHATGPT_RESTYLE_ZOOM_ENABLED_JSON__", JSON.stringify(options.zoomEnabled)),
     revision,
   };
+}
+
+async function buildRuntimePayload(options) {
+  return buildPayload(options, options.fontEnabled ? await onlineFontCss() : "");
 }
 
 export function earlyPayloadFor(payload, revision) {
@@ -332,7 +372,7 @@ export async function statusOf(session) {
 
 async function runOneShot(options) {
   const connected = await connectChatGPTTargets(options.port, options.timeoutMs);
-  const built = options.mode === "once" ? await buildPayload(options) : null;
+  const built = options.mode === "once" ? await buildRuntimePayload(options) : null;
   const results = [];
   for (const { target, session } of connected) {
     try {
@@ -352,7 +392,7 @@ async function runOneShot(options) {
 }
 
 async function runWatch(options) {
-  let built = await buildPayload(options);
+  let built = await buildRuntimePayload(options);
   const sessions = new Map();
   let stopping = false;
   let refreshTimer = null;
@@ -371,7 +411,7 @@ async function runWatch(options) {
   };
 
   const refresh = async () => {
-    const next = await buildPayload(options);
+    const next = await buildRuntimePayload(options);
     if (next.revision === built.revision) return;
     built = next;
     await Promise.all([...sessions.values()].map((record) => install(record).catch((error) => {

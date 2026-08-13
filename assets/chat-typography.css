@@ -1,9 +1,11 @@
 :is(
+  :root,
   .chatgpt-chat-typography-thread,
   .chatgpt-chat-typography-markdown-preview,
   .chatgpt-chat-typography-plan
 ) {
-  --chat-font-family: "LXGW WenKai Screen";
+  --chat-ui-font-family: "Oxanium";
+  --chat-font-family: "Oxanium", "LXGW WenKai Screen";
   --chat-font-size: 16px;
   --chat-font-weight: 500;
   --chat-line-height: 1.75;
@@ -15,6 +17,11 @@
   --chat-code-line-height: 1.6;
   --chat-code-surface: color-mix(in srgb, currentColor 5%, transparent);
   --chat-code-border-color: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.chatgpt-restyle-font-root body,
+.chatgpt-restyle-font-root body * {
+  font-family: var(--chat-ui-font-family), system-ui, sans-serif !important;
 }
 
 .chatgpt-chat-typography-markdown-preview,
@@ -65,6 +72,7 @@
   .chatgpt-chat-typography-message:not(
     .chatgpt-chat-typography-native-ui *
   ) {
+  font-family: var(--chat-font-family), var(--chat-native-font-family) !important;
   font-weight: var(--chat-font-weight) !important;
 }
 

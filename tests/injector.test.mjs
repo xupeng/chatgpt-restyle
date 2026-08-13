@@ -11,6 +11,7 @@ import {
   stateBelongsToWatcher,
   statusOf,
   validatedDebuggerUrl,
+  inlineGoogleFontCss,
 } from "../scripts/injector.mjs";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -119,6 +120,31 @@ test("early payload waits for both current ChatGPT shell markers", () => {
   assert.match(payload, /aside\.app-shell-left-panel/);
   assert.match(payload, /MutationObserver/);
   assert.match(payload, /revision-1/);
+});
+
+test("downloads Google Fonts CSS and embeds its font files", async () => {
+  const fontUrl = "https://fonts.gstatic.com/s/oxanium/test.woff2";
+  const requests = [];
+  const css = await inlineGoogleFontCss(async (url, options = {}) => {
+    requests.push({ url, options });
+    if (url.includes("fonts.googleapis.com")) {
+      return {
+        ok: true,
+        text: async () => `@font-face { font-family: 'Oxanium'; src: url(${fontUrl}) format('woff2'); }`,
+      };
+    }
+    assert.equal(url, fontUrl);
+    return {
+      ok: true,
+      headers: { get: () => "font/woff2" },
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer,
+    };
+  });
+
+  assert.equal(requests.length, 2);
+  assert.match(requests[0].options.headers["user-agent"], /Chrome/);
+  assert.match(css, /data:font\/woff2;base64,AQID/);
+  assert.doesNotMatch(css, /fonts\.gstatic\.com/);
 });
 
 test("payload revision includes both feature switches", async () => {

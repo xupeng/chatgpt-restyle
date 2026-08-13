@@ -43,5 +43,5 @@ output="$($NODE "$INJECTOR" --status --port "$port" --timeout-ms 5000)"
 printf '状态：已启用\n当前端口：%s\ninjector PID：%s\n%s\n' "$port" "$injector_pid" "$output"
 if printf '%s' "$output" | /usr/bin/grep -q '"fontEnabled": true' \
   && printf '%s' "$output" | /usr/bin/grep -q '"fontAvailable": false'; then
-  printf '提示：未检测到 LXGW WenKai Screen；正文会回退到 ChatGPT 原生字体。\n'
+  printf '提示：未同时检测到 Oxanium 和 LXGW WenKai Screen；英文或中文会回退到系统字体。\n'
 fi

@@ -1,9 +1,8 @@
 # ChatGPT Restyle
 
-ChatGPT Restyle 是一个修改 ChatGPT Desktop 对话区域、右侧 Markdown 文件预览
-及 Plan 正文排版的个人 macOS 工具。它不会修改应用安装包、
-`~/.codex/config.toml`、Appearance 设置、侧栏、顶部区域、输入框、队列消息或
-其他文件预览。
+ChatGPT Restyle 是一个修改 ChatGPT Desktop 界面、对话区域、右侧 Markdown
+文件预览及 Plan 正文排版的个人 macOS 工具。它不会修改应用安装包、
+`~/.codex/config.toml`、Appearance 设置或其他文件预览。
 
 ## 要求
 
@@ -11,11 +10,12 @@ ChatGPT Restyle 是一个修改 ChatGPT Desktop 对话区域、右侧 Markdown �
 - 官方 ChatGPT Desktop（Bundle ID 为 `com.openai.codex`）
 - 已安装 `LXGW WenKai Screen`
 
-工具不会自动下载或安装字体。
+`Oxanium` 由 Google Fonts 在线加载，不需要安装到本机。
 
 ## 默认排版
 
-- 正文：`LXGW WenKai Screen`，`16px`，字重 `500`，行高 `1.75`
+- 界面及正文英文：`Oxanium`；界面中文继续使用 ChatGPT 原生系统字体
+- 正文中文：`LXGW WenKai Screen`，`16px`，字重 `500`，行高 `1.75`
 - 块间距：`0.75em`
 - 消息间距：`24px`
 - 代码：优先使用 `Cascadia Code`，未安装时回退到 ChatGPT 原生代码字体
@@ -164,8 +164,8 @@ doctor 会检查项目文件、Shell/Node 语法、ChatGPT App 签名和内置 N
 ## 当前版本边界
 
 工具只支持当前 ChatGPT App，不保留旧版应用或旧 Markdown renderer 的兼容分支。
-样式只匹配对话流、文件面板中由 CodeMirror 承载的 Markdown 文件正文，以及
-Plan 标签页的 Markdown 正文：
+英文字体应用到整个界面；正文排版规则匹配对话流、文件面板中由 CodeMirror
+承载的 Markdown 文件正文，以及 Plan 标签页的 Markdown 正文：
 
 ```text
 main[data-app-shell-main-surface] .thread-scroll-container
