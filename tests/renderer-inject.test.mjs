@@ -150,13 +150,17 @@ function fixture({
   };
   const sidebar = { classList: classList(), style: styleDeclaration() };
   const rootNode = {
+    classList: classList(),
     appendChild(node) { nodes.set(node.id, node); },
   };
   const document = {
     documentElement: rootNode,
     head: rootNode,
     body: rootNode,
-    fonts: { check() { return fontAvailable; } },
+    fonts: {
+      check() { return fontAvailable; },
+      load() { return Promise.resolve([]); },
+    },
     createElement() {
       return {
         attributes: {},
@@ -318,7 +322,7 @@ function keyboardEvent(code, overrides = {}) {
   };
 }
 
-test("CSS is scoped to the conversation and current Markdown file editor", () => {
+test("CSS styles the app UI, conversation, and current Markdown file editor", () => {
   assert.match(css, /\.chatgpt-chat-typography-thread/);
   assert.match(css, /\.chatgpt-chat-typography-markdown-preview/);
   assert.match(css, /\.chatgpt-chat-typography-plan/);
@@ -331,8 +335,12 @@ test("CSS is scoped to the conversation and current Markdown file editor", () =>
   assert.match(css, /\.cm-markdown-code-line/);
   assert.match(css, /--chat-code-surface:\s*color-mix/);
   assert.match(css, /--chat-code-border-color:\s*color-mix/);
-  assert.match(css, /"LXGW WenKai Screen"/);
+  assert.match(css, /--chat-ui-font-family:\s*"Oxanium"/);
+  assert.match(css, /--chat-font-family:\s*"Oxanium",\s*"LXGW WenKai Screen"/);
+  assert.match(css, /\.chatgpt-restyle-font-root body \*/);
+  assert.match(css, /font-family:\s*var\(--chat-ui-font-family\),\s*system-ui,\s*sans-serif/);
   assert.match(css, /\.chatgpt-chat-typography-message/);
+  assert.match(css, /\.chatgpt-chat-typography-message:not\([\s\S]*?font-family:\s*var\(--chat-font-family\)/);
   assert.match(css, /\.cm-editor/);
   assert.match(css, /\.cm-scroller, \.cm-content, \.cm-line/);
   assert.match(template, /\[data-user-message-bubble="true"\]/);
@@ -344,7 +352,7 @@ test("CSS is scoped to the conversation and current Markdown file editor", () =>
   assert.doesNotMatch(css, /\[data-message-author-role\]|\[class\*="_markdown"\]/);
   assert.doesNotMatch(template, /_markdownContent_/);
   assert.doesNotMatch(css, /Songti|STSong/i);
-  assert.doesNotMatch(css, /(?:^|\n)\s*(?:html|body|main|:root)\b/);
+  assert.doesNotMatch(css, /(?:^|\n)\s*(?:html|main)\b/);
 });
 
 test("excludes queued messages from every custom typography rule", () => {
@@ -636,6 +644,7 @@ test("injects once, captures native fonts, and leaves sidebar untouched", () => 
   assert.equal(result.threadFound, true);
   assert.equal(result.fontAvailable, true);
   assert.equal(current.thread.classList.contains("chatgpt-chat-typography-thread"), true);
+  assert.equal(current.context.document.documentElement.classList.contains("chatgpt-restyle-font-root"), true);
   assert.equal(current.userMessage.classList.contains(MESSAGE_CLASS), true);
   assert.equal(current.assistantMessage.classList.contains(MESSAGE_CLASS), true);
   assert.equal(
@@ -679,6 +688,7 @@ test("reports a missing font and cleanup fully detaches the thread", () => {
   assert.equal(current.thread.style.values.has("--chat-native-code-font-family"), false);
   assert.equal(current.nodes.size, 0);
   assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__, undefined);
+  assert.equal(current.context.document.documentElement.classList.contains("chatgpt-restyle-font-root"), false);
 });
 
 test("font can be disabled while zoom remains active", () => {
