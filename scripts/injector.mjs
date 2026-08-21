@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const TARGET_ID = /^[A-Za-z0-9._-]{1,200}$/;
 const STATE_KEY = "__CHATGPT_CHAT_TYPOGRAPHY_STATE__";
-const MAIN_SURFACE_SELECTOR = "main[data-app-shell-main-surface]";
+const MAIN_SURFACE_SELECTOR = "main.main-surface";
 const SIDEBAR_SELECTOR = "aside.app-shell-left-panel";
 const GOOGLE_FONT_CSS_URL =
   "https://fonts.googleapis.com/css2?family=Oxanium:wght@200..800&display=swap";

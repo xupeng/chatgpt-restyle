@@ -16,22 +16,22 @@
   const MIN_ZOOM_PERCENT = 60;
   const MAX_ZOOM_PERCENT = 160;
   const ZOOM_STEP_PERCENT = 10;
-  const MAIN_SURFACE_SELECTOR = "main[data-app-shell-main-surface]";
+  const MAIN_SURFACE_SELECTOR = "main.main-surface";
   const THREAD_SELECTOR = `${MAIN_SURFACE_SELECTOR} .thread-scroll-container`;
   const MESSAGE_SELECTOR = [
-    '[data-user-message-bubble="true"] [class*="_MarkdownRoot_"]',
-    '[data-markdown-text-style="assistant-message"]',
+    '[data-user-message-bubble="true"] [class*="_markdownContent_"]',
+    '[data-content-search-unit-key$=":assistant"] [class*="_markdownContent_"]',
   ].join(", ");
   const THREAD_FOOTER_SELECTOR =
     ':scope > * > [data-thread-scroll-footer="true"]';
   const QUEUED_MESSAGES_SELECTOR =
     '.vertical-scroll-fade-mask.hide-scrollbar[class*="max-h-[30dvh]"]';
   const MARKDOWN_FILE_EDITOR_SELECTOR =
-    '[role="tabpanel"][data-app-shell-tab-panel-controller="right"][aria-label] .cm-editor';
+    '[role="tabpanel"][aria-label] .cm-editor';
   const MARKDOWN_FILE_EXTENSION = /\.(?:md|markdown)$/i;
   const PLAN_PANEL_SELECTOR = '[role="tabpanel"][aria-label="Plan"]';
   const PLAN_CONTENT_SELECTOR =
-    '[data-plan-selection-surface] [class*="_MarkdownRoot_"].text-size-chat';
+    '[class*="_markdownContent_"].text-size-chat';
   const CODE_SELECTOR =
     "pre code, code, kbd, samp, .inline-markdown, .cm-markdown-code-line";
 
@@ -285,22 +285,37 @@
     currentZoomRoots = roots;
   };
 
+  const sampleNativeFontFamily = (root, fallback = "system-ui, sans-serif") => {
+    if (!root) return fallback || "system-ui, sans-serif";
+    const hadRoot = document.documentElement.classList.contains(ROOT_CLASS);
+    if (hadRoot) document.documentElement.classList.remove(ROOT_CLASS);
+    let family = null;
+    try {
+      family = getComputedStyle(root).fontFamily;
+    } finally {
+      if (hadRoot) document.documentElement.classList.add(ROOT_CLASS);
+    }
+    return family || fallback || "system-ui, sans-serif";
+  };
+
   const captureNativeCodeFont = (root, className, fallbackSample = null) => {
     if (!root || root.style.getPropertyValue?.("--chat-native-code-font-family")) return;
     const wasStyled = root.classList.contains(className);
+    const hadRoot = document.documentElement.classList.contains(ROOT_CLASS);
     if (wasStyled) root.classList.remove(className);
+    if (hadRoot) document.documentElement.classList.remove(ROOT_CLASS);
     let family = null;
     try {
       const sample = root.querySelector?.(CODE_SELECTOR) || fallbackSample;
       if (sample) family = getComputedStyle(sample).fontFamily;
     } finally {
+      if (hadRoot) document.documentElement.classList.add(ROOT_CLASS);
       if (wasStyled) root.classList.add(className);
     }
     if (family) root.style.setProperty("--chat-native-code-font-family", family);
   };
 
   const sync = () => {
-    ensureStyle();
     const thread = document.querySelector(THREAD_SELECTOR);
     if (currentThread && currentThread !== thread) detach(currentThread);
     currentThread = thread;
@@ -309,14 +324,8 @@
     }
     if (fontEnabled && thread && !nativeFontFamily) {
       const nativeSample = thread.querySelector?.(MESSAGE_SELECTOR) || thread;
-      nativeFontFamily = getComputedStyle(nativeSample).fontFamily;
+      nativeFontFamily = sampleNativeFontFamily(nativeSample);
     }
-    if (fontEnabled && thread) {
-      thread.style.setProperty("--chat-native-font-family", nativeFontFamily || "system-ui, sans-serif");
-      captureNativeCodeFont(thread, THREAD_CLASS);
-      thread.classList.add(THREAD_CLASS);
-    }
-    else detach(thread);
 
     const messages = new Set(fontEnabled ? findMessages(thread) : []);
     for (const message of currentMessages) {
@@ -343,7 +352,7 @@
       else if (!preview.classList.contains(PREVIEW_CLASS)) {
         preview.style.setProperty(
           "--chat-native-font-family",
-          getComputedStyle(preview).fontFamily || nativeFontFamily || "system-ui, sans-serif",
+          sampleNativeFontFamily(preview, nativeFontFamily),
         );
         preview.classList.add(PREVIEW_CLASS);
       }
@@ -362,13 +371,20 @@
       else if (!plan.classList.contains(PLAN_CLASS)) {
         plan.style.setProperty(
           "--chat-native-font-family",
-          getComputedStyle(plan).fontFamily || nativeFontFamily || "system-ui, sans-serif",
+          sampleNativeFontFamily(plan, nativeFontFamily),
         );
         plan.classList.add(PLAN_CLASS);
       }
       if (fontEnabled) captureNativeCodeFont(plan, PLAN_CLASS);
     }
     currentPlans = plans;
+    if (fontEnabled && thread) {
+      thread.style.setProperty("--chat-native-font-family", nativeFontFamily || "system-ui, sans-serif");
+      captureNativeCodeFont(thread, THREAD_CLASS);
+      thread.classList.add(THREAD_CLASS);
+    }
+    else detach(thread);
+    ensureStyle();
     syncZoomRoots(thread, previews, plans);
     if (window[STATE_KEY]) window[STATE_KEY].nativeFontFamily = nativeFontFamily;
     return Boolean(thread || previews.size || plans.size);
