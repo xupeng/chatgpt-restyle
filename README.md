@@ -16,6 +16,8 @@ ChatGPT Restyle 是一个修改 ChatGPT Desktop 界面、对话区域、右侧 M
 
 - 界面及正文英文：`Oxanium`；界面中文继续使用 ChatGPT 原生系统字体
 - 正文中文：`LXGW WenKai Screen`，`16px`，字重 `500`，行高 `1.75`
+- 标题（对话、Markdown 文件预览、Plan）：保留原生字号与字重，字体与正文一致
+  （英文 `Oxanium`、中文 `LXGW WenKai Screen`）
 - 块间距：`0.75em`
 - 消息间距：`24px`
 - 代码：优先使用 `Cascadia Code`，未安装时回退到 ChatGPT 原生代码字体
@@ -168,13 +170,13 @@ doctor 会检查项目文件、Shell/Node 语法、ChatGPT App 签名和内置 N
 承载的 Markdown 文件正文，以及 Plan 标签页的 Markdown 正文：
 
 ```text
-main[data-app-shell-main-surface] .thread-scroll-container
-  [data-user-message-bubble="true"] [class*="_MarkdownRoot_"]
-main[data-app-shell-main-surface] .thread-scroll-container
-  [data-markdown-text-style="assistant-message"]
-[role="tabpanel"][data-app-shell-tab-panel-controller="right"][aria-label$=".md"] .cm-editor
+main.main-surface .thread-scroll-container
+  [data-user-message-bubble="true"] [class*="_markdownContent_"]
+main.main-surface .thread-scroll-container
+  [data-content-search-unit-key$=":assistant"] [class*="_markdownContent_"]
+[role="tabpanel"][aria-label$=".md"] .cm-editor
 [role="tabpanel"][aria-label="Plan"]
-  [data-plan-selection-surface] [class*="_MarkdownRoot_"].text-size-chat
+  [class*="_markdownContent_"].text-size-chat
 ```
 
 ChatGPT 更新后如果该结构变化，需要根据当前 renderer DOM 更新选择器和测试。

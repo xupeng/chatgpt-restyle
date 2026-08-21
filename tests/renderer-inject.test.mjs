@@ -18,8 +18,8 @@ const ZOOM_TOAST_ID = "chatgpt-restyle-content-zoom-toast";
 const ZOOM_STORAGE_KEY = "chatgpt-restyle.contentZoomPercent.v1";
 const MESSAGE_CLASS = "chatgpt-chat-typography-message";
 const MESSAGE_SELECTOR = [
-  '[data-user-message-bubble="true"] [class*="_MarkdownRoot_"]',
-  '[data-markdown-text-style="assistant-message"]',
+  '[data-user-message-bubble="true"] [class*="_markdownContent_"]',
+  '[data-content-search-unit-key$=":assistant"] [class*="_markdownContent_"]',
 ].join(", ");
 
 function styleDeclaration() {
@@ -49,7 +49,6 @@ function fixture({
   previewInsideThread = false,
   withMarkdownFileEditor = false,
   markdownFilename = "README.md",
-  markdownPanelController = "right",
   withPlan = false,
   planAriaLabel = "Plan",
   withQueuedMessages = false,
@@ -142,8 +141,7 @@ function fixture({
   const planPanel = {
     getAttribute(name) { return name === "aria-label" ? planAriaLabel : null; },
     querySelector(selector) {
-      return selector
-        === '[data-plan-selection-surface] [class*="_MarkdownRoot_"].text-size-chat'
+      return selector === '[class*="_markdownContent_"].text-size-chat'
         ? planContent
         : null;
     },
@@ -173,18 +171,15 @@ function fixture({
     },
     getElementById(id) { return nodes.get(id) || null; },
     querySelector(selector) {
-      if (selector === "main[data-app-shell-main-surface] .thread-scroll-container") {
+      if (selector === "main.main-surface .thread-scroll-container") {
         return thread;
       }
       if (selector === "aside.app-shell-left-panel") return sidebar;
       return null;
     },
     querySelectorAll(selector) {
-      if (
-        selector
-        === '[role="tabpanel"][data-app-shell-tab-panel-controller="right"][aria-label] .cm-editor'
-      ) {
-        return withMarkdownFileEditor && markdownPanelController === "right"
+      if (selector === '[role="tabpanel"][aria-label] .cm-editor') {
+        return withMarkdownFileEditor
           ? [markdownFileEditor]
           : [];
       }
@@ -325,6 +320,8 @@ function keyboardEvent(code, overrides = {}) {
 test("CSS styles the app UI, conversation, and current Markdown file editor", () => {
   assert.match(css, /\.chatgpt-chat-typography-thread/);
   assert.match(css, /\.chatgpt-chat-typography-markdown-preview/);
+  assert.match(css, /\.file-editor-heading/);
+  assert.match(css, /\.chatgpt-chat-typography-plan\.chatgpt-chat-typography-plan/);
   assert.match(css, /\.chatgpt-chat-typography-plan/);
   assert.match(css, /\.chatgpt-chat-typography-native-ui \*/);
   assert.match(css, /--chat-font-weight:\s*500/);
@@ -344,13 +341,11 @@ test("CSS styles the app UI, conversation, and current Markdown file editor", ()
   assert.match(css, /\.cm-editor/);
   assert.match(css, /\.cm-scroller, \.cm-content, \.cm-line/);
   assert.match(template, /\[data-user-message-bubble="true"\]/);
-  assert.match(template, /\[data-markdown-text-style="assistant-message"\]/);
-  assert.match(template, /\[data-app-shell-tab-panel-controller="right"\]/);
+  assert.match(template, /\[data-content-search-unit-key\$=":assistant"\]/);
   assert.match(template, /\.cm-editor/);
-  assert.match(template, /\[data-plan-selection-surface\]/);
-  assert.match(template, /\[class\*="_MarkdownRoot_"\]\.text-size-chat/);
+  assert.match(template, /\[class\*="_markdownContent_"\]\.text-size-chat/);
+  assert.doesNotMatch(template, /data-plan-selection-surface/);
   assert.doesNotMatch(css, /\[data-message-author-role\]|\[class\*="_markdown"\]/);
-  assert.doesNotMatch(template, /_markdownContent_/);
   assert.doesNotMatch(css, /Songti|STSong/i);
   assert.doesNotMatch(css, /(?:^|\n)\s*(?:html|main)\b/);
 });
@@ -403,17 +398,6 @@ test("does not treat conversation Markdown as a file preview", () => {
 test("does not style a non-Markdown file editor", () => {
   const current = fixture({
     markdownFilename: "package.json",
-    withMarkdownFileEditor: true,
-  });
-  const result = vm.runInNewContext(current.payload, current.context);
-  assert.equal(result.previewCount, 0);
-  assert.equal(current.markdownFileEditor.classList.values.size, 0);
-  assert.equal(current.markdownFileEditor.style.values.size, 0);
-});
-
-test("does not style a Markdown editor outside the right panel", () => {
-  const current = fixture({
-    markdownPanelController: "main",
     withMarkdownFileEditor: true,
   });
   const result = vm.runInNewContext(current.payload, current.context);

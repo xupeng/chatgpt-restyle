@@ -42,6 +42,11 @@
 }
 
 .chatgpt-chat-typography-markdown-preview.cm-editor
+  .file-editor-heading {
+  font-family: var(--chat-font-family), var(--chat-native-font-family) !important;
+}
+
+.chatgpt-chat-typography-markdown-preview.cm-editor
   .cm-markdown-code-line {
   box-sizing: border-box;
   padding: 2px 12px !important;
@@ -112,21 +117,34 @@
   line-height: var(--chat-code-line-height) !important;
 }
 
-.chatgpt-chat-typography-plan
-  :where(p, li, blockquote, td, th) {
+.chatgpt-chat-typography-plan.chatgpt-chat-typography-plan {
   font-family: var(--chat-font-family), var(--chat-native-font-family) !important;
   font-size: var(--chat-font-size) !important;
   font-weight: var(--chat-font-weight) !important;
   line-height: var(--chat-line-height) !important;
 }
 
-.chatgpt-chat-typography-plan
-  :where(p, ul, ol, blockquote, pre, table, details)
-  + :where(p, ul, ol, blockquote, pre, table, details) {
+.chatgpt-chat-typography-plan.chatgpt-chat-typography-plan
+  :is(p, li, blockquote, td, th) {
+  font-family: var(--chat-font-family), var(--chat-native-font-family) !important;
+  font-size: var(--chat-font-size) !important;
+  font-weight: var(--chat-font-weight) !important;
+  line-height: var(--chat-line-height) !important;
+}
+
+.chatgpt-chat-typography-plan.chatgpt-chat-typography-plan
+  :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--chat-font-family), var(--chat-native-font-family) !important;
+}
+
+.chatgpt-chat-typography-plan.chatgpt-chat-typography-plan
+  :is(p, ul, ol, blockquote, pre, table, details)
+  + :is(p, ul, ol, blockquote, pre, table, details) {
   margin-top: var(--chat-block-gap) !important;
 }
 
-.chatgpt-chat-typography-plan :where(pre, code, kbd, samp, .inline-markdown) {
+.chatgpt-chat-typography-plan.chatgpt-chat-typography-plan
+  :is(pre, code, kbd, samp, .inline-markdown) {
   font-family: var(--chat-code-font-family) !important;
   font-size: var(--chat-code-font-size) !important;
   font-weight: var(--chat-code-font-weight) !important;

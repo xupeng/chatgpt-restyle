@@ -115,8 +115,8 @@ test("accepts a ChatGPT PID only for watcher mode", () => {
 
 test("early payload waits for both current ChatGPT shell markers", () => {
   const payload = earlyPayloadFor("window.__installed = true", "revision-1");
-  assert.match(payload, /main\[data-app-shell-main-surface\]/);
-  assert.doesNotMatch(payload, /main\.main-surface/);
+  assert.match(payload, /main\.main-surface/);
+  assert.doesNotMatch(payload, /main\[data-app-shell-main-surface\]/);
   assert.match(payload, /aside\.app-shell-left-panel/);
   assert.match(payload, /MutationObserver/);
   assert.match(payload, /revision-1/);
