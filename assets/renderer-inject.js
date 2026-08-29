@@ -12,6 +12,7 @@
   const ZOOM_STYLE_ID = "chatgpt-restyle-content-zoom-style";
   const ZOOM_TOAST_ID = "chatgpt-restyle-content-zoom-toast";
   const ZOOM_STORAGE_KEY = "chatgpt-restyle.contentZoomPercent.v1";
+  const TERMINAL_ZOOM_STORAGE_KEY = "chatgpt-restyle.terminalZoomPercent.v1";
   const DEFAULT_ZOOM_PERCENT = 100;
   const MIN_ZOOM_PERCENT = 60;
   const MAX_ZOOM_PERCENT = 160;
@@ -34,6 +35,10 @@
     '[class*="_markdownContent_"].text-size-chat';
   const CODE_SELECTOR =
     "pre code, code, kbd, samp, .inline-markdown, .cm-markdown-code-line";
+  const TERMINAL_SELECTOR = "[data-codex-xterm]";
+  const TERMINAL_NATIVE_CODE_FONT_PROPERTY = "--chat-native-code-font-family";
+  const TERMINAL_FIBER_DEPTH_LIMIT = 16;
+  const TERMINAL_HOOK_LIMIT = 64;
 
   const previous = window[STATE_KEY];
   const previousNativeFontFamily = previous?.nativeFontFamily || null;
@@ -50,6 +55,7 @@
   let currentPreviews = new Set();
   let currentPlans = new Set();
   let currentNativeUiRoots = new Set();
+  let currentTerminals = new Map();
   let currentZoomRoots = new Set();
   let timer = null;
   let zoomToastTimer = null;
@@ -64,15 +70,16 @@
       : DEFAULT_ZOOM_PERCENT;
   };
 
-  const readZoomPercent = () => {
+  const readZoomPercent = (storageKey) => {
     try {
-      return parseZoomPercent(window.localStorage.getItem(ZOOM_STORAGE_KEY));
+      return parseZoomPercent(window.localStorage.getItem(storageKey));
     } catch {
       return DEFAULT_ZOOM_PERCENT;
     }
   };
 
-  let contentZoomPercent = readZoomPercent();
+  let contentZoomPercent = readZoomPercent(ZOOM_STORAGE_KEY);
+  let terminalZoomPercent = readZoomPercent(TERMINAL_ZOOM_STORAGE_KEY);
 
   const ensureStyle = () => {
     if (!fontEnabled) {
@@ -128,7 +135,7 @@
 `;
   };
 
-  const showZoomToast = () => {
+  const showZoomToast = (label, percent) => {
     let toast = document.getElementById(ZOOM_TOAST_ID);
     if (!toast) {
       toast = document.createElement("div");
@@ -137,7 +144,7 @@
       toast.setAttribute("aria-live", "polite");
       (document.body || document.documentElement).appendChild(toast);
     }
-    toast.textContent = `正文缩放 ${contentZoomPercent}%`;
+    toast.textContent = `${label} ${percent}%`;
     if (zoomToastTimer !== null) clearTimeout(zoomToastTimer);
     zoomToastTimer = setTimeout(() => {
       document.getElementById(ZOOM_TOAST_ID)?.remove();
@@ -145,18 +152,37 @@
     }, 900);
   };
 
+  const clampZoomPercent = (percent) => Math.min(
+    MAX_ZOOM_PERCENT,
+    Math.max(MIN_ZOOM_PERCENT, percent),
+  );
+
   const applyZoomPercent = (nextPercent, { announce = false, persist = false } = {}) => {
-    contentZoomPercent = Math.min(
-      MAX_ZOOM_PERCENT,
-      Math.max(MIN_ZOOM_PERCENT, nextPercent),
-    );
+    contentZoomPercent = clampZoomPercent(nextPercent);
     updateZoomStyle();
     if (persist) {
       try {
         window.localStorage.setItem(ZOOM_STORAGE_KEY, String(contentZoomPercent));
       } catch {}
     }
-    if (announce) showZoomToast();
+    if (announce) showZoomToast("正文缩放", contentZoomPercent);
+  };
+
+  const applyTerminalZoomPercent = (
+    nextPercent,
+    { announce = false, persist = false } = {},
+  ) => {
+    terminalZoomPercent = clampZoomPercent(nextPercent);
+    currentTerminals.forEach(applyTerminalOptions);
+    if (persist) {
+      try {
+        window.localStorage.setItem(
+          TERMINAL_ZOOM_STORAGE_KEY,
+          String(terminalZoomPercent),
+        );
+      } catch {}
+    }
+    if (announce) showZoomToast("Terminal 缩放", terminalZoomPercent);
   };
 
   const shortcutAction = (event) => {
@@ -178,6 +204,18 @@
     if (!action) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    const terminalFocused = Boolean(
+      document.activeElement?.closest?.(TERMINAL_SELECTOR),
+    );
+    if (terminalFocused) {
+      syncTerminals();
+      const nextPercent = action === "reset"
+        ? DEFAULT_ZOOM_PERCENT
+        : terminalZoomPercent
+          + (action === "increase" ? ZOOM_STEP_PERCENT : -ZOOM_STEP_PERCENT);
+      applyTerminalZoomPercent(nextPercent, { announce: true, persist: true });
+      return;
+    }
     const nextPercent = action === "reset"
       ? DEFAULT_ZOOM_PERCENT
       : contentZoomPercent + (action === "increase" ? ZOOM_STEP_PERCENT : -ZOOM_STEP_PERCENT);
@@ -185,8 +223,12 @@
   };
 
   const onZoomStorage = (event) => {
-    if (event.key !== ZOOM_STORAGE_KEY && event.key !== null) return;
-    applyZoomPercent(parseZoomPercent(event.newValue));
+    if (event.key === ZOOM_STORAGE_KEY || event.key === null) {
+      applyZoomPercent(parseZoomPercent(event.newValue));
+    }
+    if (event.key === TERMINAL_ZOOM_STORAGE_KEY || event.key === null) {
+      applyTerminalZoomPercent(parseZoomPercent(event.newValue));
+    }
   };
 
   const fontAvailable = () => {
@@ -315,6 +357,224 @@
     if (family) root.style.setProperty("--chat-native-code-font-family", family);
   };
 
+  // xterm and its FitAddon live in hook refs; identify a bounded matching pair.
+  const findTerminalRuntime = (root) => {
+    const fiberKey = Object.getOwnPropertyNames(root || {})
+      .find((key) => key.startsWith("__reactFiber$"));
+    let fiber = fiberKey ? root[fiberKey] : null;
+    const hookRefs = [];
+    let visitedHooks = 0;
+    for (
+      let depth = 0;
+      fiber && depth < TERMINAL_FIBER_DEPTH_LIMIT && visitedHooks < TERMINAL_HOOK_LIMIT;
+      depth += 1, fiber = fiber.return
+    ) {
+      let hook = fiber.memoizedState;
+      const seen = new Set();
+      while (
+        hook
+        && typeof hook === "object"
+        && visitedHooks < TERMINAL_HOOK_LIMIT
+        && !seen.has(hook)
+      ) {
+        seen.add(hook);
+        visitedHooks += 1;
+        const candidate = hook.memoizedState?.current;
+        if (candidate && typeof candidate === "object") hookRefs.push(candidate);
+        hook = hook.next;
+      }
+    }
+    const instances = hookRefs.filter((candidate) => (
+      candidate?.options
+      && typeof candidate.open === "function"
+      && typeof candidate.write === "function"
+    ));
+    for (const instance of instances) {
+      const fitAddon = hookRefs.find((candidate) => (
+        candidate?._terminal === instance
+        && typeof candidate.fit === "function"
+        && typeof candidate.dispose === "function"
+      ));
+      if (fitAddon) return { instance, fitAddon };
+    }
+    return null;
+  };
+
+  const validTerminalFontSize = (value) => (
+    typeof value === "number" && Number.isFinite(value) && value > 0
+  );
+
+  const readTerminalFontFamily = (instance) => {
+    try {
+      const value = instance.options.fontFamily;
+      return typeof value === "string" ? value : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const readTerminalFontSize = (instance) => {
+    try {
+      const value = instance.options.fontSize;
+      return validTerminalFontSize(value) ? value : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const setTerminalFontSize = (record, fontSize) => {
+    record.instance.options.fontSize = fontSize;
+    try {
+      record.fitAddon.fit();
+    } catch {}
+  };
+
+  const restoreTerminalZoom = (record) => {
+    if (!record || record.appliedFontSize === null) return;
+    try {
+      const currentFontSize = record.instance.options.fontSize;
+      if (
+        currentFontSize === record.appliedFontSize
+        && currentFontSize !== record.nativeFontSize
+      ) {
+        setTerminalFontSize(record, record.nativeFontSize);
+      }
+    } catch {}
+    record.appliedFontSize = null;
+  };
+
+  const detachTerminal = (record) => {
+    if (!record) return;
+    try {
+      if (
+        record.appliedFontFamily !== null
+        && record.instance.options.fontFamily === record.appliedFontFamily
+      ) {
+        record.instance.options.fontFamily = record.nativeFontFamily;
+      }
+    } catch {}
+    record.appliedFontFamily = null;
+    // Restore size last so its fit measures the final native font metrics.
+    restoreTerminalZoom(record);
+    try {
+      if (
+        record.appliedNativeCodeFontFamily !== null
+        && record.root.style.getPropertyValue(TERMINAL_NATIVE_CODE_FONT_PROPERTY)
+          === record.appliedNativeCodeFontFamily
+      ) {
+        if (record.originalNativeCodeFontFamily) {
+          record.root.style.setProperty(
+            TERMINAL_NATIVE_CODE_FONT_PROPERTY,
+            record.originalNativeCodeFontFamily,
+            record.originalNativeCodeFontPriority,
+          );
+        } else {
+          record.root.style.removeProperty(TERMINAL_NATIVE_CODE_FONT_PROPERTY);
+        }
+      }
+    } catch {}
+    record.appliedNativeCodeFontFamily = null;
+  };
+
+  const applyTerminalFont = (record) => {
+    if (!fontEnabled) return;
+    try {
+      const currentFontFamily = readTerminalFontFamily(record.instance);
+      if (currentFontFamily === null) return;
+      if (
+        record.appliedFontFamily === null
+        || currentFontFamily !== record.appliedFontFamily
+      ) {
+        record.nativeFontFamily = currentFontFamily;
+      }
+      record.root.style.setProperty(
+        TERMINAL_NATIVE_CODE_FONT_PROPERTY,
+        record.nativeFontFamily,
+      );
+      record.appliedNativeCodeFontFamily = record.root.style.getPropertyValue(
+        TERMINAL_NATIVE_CODE_FONT_PROPERTY,
+      );
+      record.customFontFamily = getComputedStyle(record.root)
+        .getPropertyValue?.("--chat-code-font-family")?.trim() || null;
+      if (!record.customFontFamily) return;
+      if (currentFontFamily !== record.customFontFamily) {
+        record.instance.options.fontFamily = record.customFontFamily;
+      }
+      record.appliedFontFamily = record.instance.options.fontFamily;
+    } catch {}
+  };
+
+  const applyTerminalZoom = (record) => {
+    if (!zoomEnabled) return;
+    try {
+      const currentFontSize = readTerminalFontSize(record.instance);
+      if (currentFontSize === null) return;
+      if (
+        record.appliedFontSize === null
+        || currentFontSize !== record.appliedFontSize
+      ) {
+        record.nativeFontSize = currentFontSize;
+      }
+      const nextFontSize = record.nativeFontSize * terminalZoomPercent / 100;
+      if (currentFontSize !== nextFontSize) {
+        setTerminalFontSize(record, nextFontSize);
+      }
+      record.appliedFontSize = record.instance.options.fontSize;
+    } catch {}
+  };
+
+  const applyTerminalOptions = (record) => {
+    if (!record) return;
+    applyTerminalFont(record);
+    applyTerminalZoom(record);
+  };
+
+  const syncTerminals = () => {
+    const roots = new Set(fontEnabled || zoomEnabled
+      ? Array.from(document.querySelectorAll(TERMINAL_SELECTOR))
+      : []);
+    for (const [root, record] of currentTerminals) {
+      if (!roots.has(root)) detachTerminal(record);
+    }
+    const nextTerminals = new Map();
+    for (const root of roots) {
+      const runtime = findTerminalRuntime(root);
+      const previous = currentTerminals.get(root);
+      if (!runtime) {
+        if (previous) nextTerminals.set(root, previous);
+        continue;
+      }
+      const { instance, fitAddon } = runtime;
+      if (previous && previous.instance !== instance) detachTerminal(previous);
+      let record;
+      if (previous?.instance === instance) {
+        record = previous;
+        record.fitAddon = fitAddon;
+      } else {
+        record = {
+          root,
+          instance,
+          fitAddon,
+          nativeFontFamily: readTerminalFontFamily(instance),
+          nativeFontSize: readTerminalFontSize(instance),
+          customFontFamily: null,
+          originalNativeCodeFontFamily: root.style.getPropertyValue(
+            TERMINAL_NATIVE_CODE_FONT_PROPERTY,
+          ),
+          originalNativeCodeFontPriority: root.style.getPropertyPriority?.(
+            TERMINAL_NATIVE_CODE_FONT_PROPERTY,
+          ) || "",
+          appliedNativeCodeFontFamily: null,
+          appliedFontFamily: null,
+          appliedFontSize: null,
+        };
+      }
+      applyTerminalOptions(record);
+      nextTerminals.set(root, record);
+    }
+    currentTerminals = nextTerminals;
+  };
+
   const sync = () => {
     const thread = document.querySelector(THREAD_SELECTOR);
     if (currentThread && currentThread !== thread) detach(currentThread);
@@ -385,6 +645,7 @@
     }
     else detach(thread);
     ensureStyle();
+    syncTerminals();
     syncZoomRoots(thread, previews, plans);
     if (window[STATE_KEY]) window[STATE_KEY].nativeFontFamily = nativeFontFamily;
     return Boolean(thread || previews.size || plans.size);
@@ -412,6 +673,7 @@
     document.querySelectorAll(`.${THREAD_ZOOM_LAYOUT_CLASS}`)
       .forEach((root) => root.classList.remove(THREAD_ZOOM_LAYOUT_CLASS));
     currentZoomRoots = new Set();
+    currentTerminals.forEach(restoreTerminalZoom);
     document.getElementById(ZOOM_TOAST_ID)?.remove();
     document.getElementById(ZOOM_STYLE_ID)?.remove();
   };
@@ -419,6 +681,8 @@
   const cleanup = () => {
     observer.disconnect();
     if (timer) clearTimeout(timer);
+    currentTerminals.forEach(detachTerminal);
+    currentTerminals = new Map();
     disposeZoom();
     detach(currentThread);
     currentMessages.forEach(detachMessage);
@@ -449,6 +713,7 @@
     get timer() { return timer; },
     nativeFontFamily,
     get contentZoomPercent() { return contentZoomPercent; },
+    get terminalZoomPercent() { return terminalZoomPercent; },
     fontEnabled,
     zoomEnabled,
     fontAvailable: fontEnabled ? fontAvailable() : null,
@@ -466,6 +731,7 @@
     planCount: currentPlans.size,
     nativeUiCount: currentNativeUiRoots.size,
     contentZoomPercent,
+    terminalZoomPercent,
     fontEnabled,
     zoomEnabled,
     fontAvailable: window[STATE_KEY].fontAvailable,

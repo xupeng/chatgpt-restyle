@@ -162,7 +162,7 @@ test("payload revision includes both feature switches", async () => {
   }
 });
 
-test("status reports the current content zoom and defaults to 100 when absent", async () => {
+test("status reports both zoom ratios and defaults them to 100 when absent", async () => {
   const statusSession = (state) => ({
     evaluate(expression) {
       return vm.runInNewContext(expression, {
@@ -177,6 +177,7 @@ test("status reports the current content zoom and defaults to 100 when absent", 
 
   const installed = await statusOf(statusSession({
     contentZoomPercent: 130,
+    terminalZoomPercent: 120,
     fontEnabled: true,
     zoomEnabled: false,
     fontAvailable: true,
@@ -184,12 +185,14 @@ test("status reports the current content zoom and defaults to 100 when absent", 
     version: "revision-1",
   }));
   assert.equal(installed.contentZoomPercent, 130);
+  assert.equal(installed.terminalZoomPercent, 120);
   assert.equal(installed.installed, true);
   assert.equal(installed.fontEnabled, true);
   assert.equal(installed.zoomEnabled, false);
 
   const fontDisabled = await statusOf(statusSession({
     contentZoomPercent: 120,
+    terminalZoomPercent: 140,
     fontEnabled: false,
     zoomEnabled: true,
     fontAvailable: true,
@@ -198,6 +201,7 @@ test("status reports the current content zoom and defaults to 100 when absent", 
 
   const absent = await statusOf(statusSession(undefined));
   assert.equal(absent.contentZoomPercent, 100);
+  assert.equal(absent.terminalZoomPercent, 100);
   assert.equal(absent.installed, false);
   assert.equal(absent.fontEnabled, false);
   assert.equal(absent.zoomEnabled, false);

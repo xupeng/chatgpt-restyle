@@ -16,6 +16,9 @@ const THREAD_ZOOM_LAYOUT_CLASS = "chatgpt-restyle-content-zoom-thread-layout";
 const ZOOM_STYLE_ID = "chatgpt-restyle-content-zoom-style";
 const ZOOM_TOAST_ID = "chatgpt-restyle-content-zoom-toast";
 const ZOOM_STORAGE_KEY = "chatgpt-restyle.contentZoomPercent.v1";
+const TERMINAL_ZOOM_STORAGE_KEY = "chatgpt-restyle.terminalZoomPercent.v1";
+const TERMINAL_NATIVE_FONT_FAMILY = 'ui-monospace, "SFMono-Regular", Menlo, monospace';
+const TERMINAL_CUSTOM_FONT_FAMILY = `"Cascadia Code", ${TERMINAL_NATIVE_FONT_FAMILY}`;
 const MESSAGE_CLASS = "chatgpt-chat-typography-message";
 const MESSAGE_SELECTOR = [
   '[data-user-message-bubble="true"] [class*="_markdownContent_"]',
@@ -24,11 +27,19 @@ const MESSAGE_SELECTOR = [
 
 function styleDeclaration() {
   const values = new Map();
+  const priorities = new Map();
   return {
     values,
-    setProperty(name, value) { values.set(name, value); },
+    setProperty(name, value, priority = "") {
+      values.set(name, value);
+      priorities.set(name, priority);
+    },
     getPropertyValue(name) { return values.get(name) || ""; },
-    removeProperty(name) { values.delete(name); },
+    getPropertyPriority(name) { return priorities.get(name) || ""; },
+    removeProperty(name) {
+      values.delete(name);
+      priorities.delete(name);
+    },
   };
 }
 
@@ -53,14 +64,23 @@ function fixture({
   planAriaLabel = "Plan",
   withQueuedMessages = false,
   withCodeSamples = false,
+  withTerminal = false,
+  withSecondTerminal = false,
   storedZoom = null,
+  storedTerminalZoom = null,
   storageThrows = false,
+  terminalFontWriteThrows = false,
+  firstTerminalFontSizeWriteThrows = false,
+  firstTerminalFitThrows = false,
 } = {}) {
   const nodes = new Map();
   const observers = [];
   const listeners = new Map();
   const storage = new Map();
   if (storedZoom !== null) storage.set(ZOOM_STORAGE_KEY, storedZoom);
+  if (storedTerminalZoom !== null) {
+    storage.set(TERMINAL_ZOOM_STORAGE_KEY, storedTerminalZoom);
+  }
   const zoomCandidates = new Set();
   const queuedMessages = {
     classList: classList(),
@@ -71,6 +91,85 @@ function fixture({
   const assistantMessage = { classList: classList(), style: styleDeclaration() };
   const previewCode = {};
   const planCode = {};
+  let terminalCount = 0;
+  const hookChain = (candidates) => candidates.reduceRight((next, current) => ({
+    memoizedState: { current },
+    next,
+  }), null);
+  const setTerminalHookLayers = (root, layers) => {
+    let parent = null;
+    for (let index = layers.length - 1; index >= 0; index -= 1) {
+      parent = { memoizedState: hookChain(layers[index]), return: parent };
+    }
+    root.__reactFiber$test = { memoizedState: null, return: parent };
+  };
+  const makeTerminal = (fontSize = 13) => {
+    const terminalIndex = terminalCount;
+    terminalCount += 1;
+    let fontFamily = TERMINAL_NATIVE_FONT_FAMILY;
+    let currentFontSize = fontSize;
+    const instance = {
+      options: {
+        get fontFamily() { return fontFamily; },
+        set fontFamily(value) {
+          if (terminalFontWriteThrows) throw new Error("font update failed");
+          fontFamily = value;
+        },
+        get fontSize() { return currentFontSize; },
+        set fontSize(value) {
+          if (firstTerminalFontSizeWriteThrows && terminalIndex === 0) {
+            throw new Error("font size update failed");
+          }
+          currentFontSize = value;
+        },
+      },
+      open() {},
+      write() {},
+    };
+    const decoyInstance = {
+      options: { fontFamily: "monospace", fontSize: 11 },
+      open() {},
+      write() {},
+    };
+    const decoyFitAddon = {
+      _terminal: {},
+      fitCalls: 0,
+      fit() { this.fitCalls += 1; },
+      dispose() {},
+    };
+    const fitAddon = {
+      _terminal: instance,
+      fitCalls: 0,
+      fitFontFamilies: [],
+      fit() {
+        this.fitCalls += 1;
+        this.fitFontFamilies.push(instance.options.fontFamily);
+        if (firstTerminalFitThrows && terminalIndex === 0) {
+          throw new Error("fit failed");
+        }
+      },
+      dispose() {},
+    };
+    const root = { style: styleDeclaration() };
+    const runtimeRefs = [decoyInstance, decoyFitAddon, fitAddon, instance];
+    setTerminalHookLayers(root, [runtimeRefs]);
+    const textarea = {
+      closest(selector) { return selector === "[data-codex-xterm]" ? root : null; },
+    };
+    return {
+      decoyFitAddon,
+      decoyInstance,
+      fitAddon,
+      instance,
+      root,
+      runtimeRefs,
+      setHookLayers(layers) { setTerminalHookLayers(root, layers); },
+      textarea,
+    };
+  };
+  const terminal = makeTerminal();
+  const mountedTerminals = withTerminal ? [terminal] : [];
+  if (withSecondTerminal) mountedTerminals.push(makeTerminal(15));
   const makeThreadContent = () => ({
     classList: classList(),
     style: styleDeclaration(),
@@ -152,6 +251,7 @@ function fixture({
     appendChild(node) { nodes.set(node.id, node); },
   };
   const document = {
+    activeElement: null,
     documentElement: rootNode,
     head: rootNode,
     body: rootNode,
@@ -185,6 +285,9 @@ function fixture({
       }
       if (selector === '[role="tabpanel"][aria-label="Plan"]') {
         return withPlan && planAriaLabel === "Plan" ? [planPanel] : [];
+      }
+      if (selector === "[data-codex-xterm]") {
+        return mountedTerminals.map(({ root }) => root);
       }
       if (selector === ".chatgpt-chat-typography-thread") {
         return thread.classList.contains(selector.slice(1)) ? [thread] : [];
@@ -250,6 +353,19 @@ function fixture({
         return { fontFamily: '-apple-system, "PingFang SC", sans-serif' };
       }
       if (node === planContent) return { fontFamily: '-apple-system, "system-ui", sans-serif' };
+      const terminalRoot = mountedTerminals
+        .find(({ root: candidate }) => node === candidate)?.root;
+      if (terminalRoot) {
+        return {
+          getPropertyValue(name) {
+            if (name !== "--chat-code-font-family") return "";
+            const nativeFamily = terminalRoot.style.getPropertyValue(
+              "--chat-native-code-font-family",
+            ) || "ui-monospace, monospace";
+            return `"Cascadia Code", ${nativeFamily}`;
+          },
+        };
+      }
       assert.equal(node, markdownFileEditor);
       return { fontFamily: 'Inter, -apple-system, sans-serif' };
     },
@@ -297,6 +413,29 @@ function fixture({
     assistantMessage,
     threadFooter,
     storage,
+    get terminalInstance() { return terminal.instance; },
+    get terminalInstances() { return mountedTerminals.map(({ instance }) => instance); },
+    get terminalFitAddon() { return terminal.fitAddon; },
+    get terminalFitAddons() { return mountedTerminals.map(({ fitAddon }) => fitAddon); },
+    get terminalDecoyFitAddons() { return mountedTerminals.map(({ decoyFitAddon }) => decoyFitAddon); },
+    get terminalDecoyInstances() { return mountedTerminals.map(({ decoyInstance }) => decoyInstance); },
+    get terminalRoot() { return terminal.root; },
+    buryTerminalRuntimeBeyondHookLimit(index = 0) {
+      const selected = mountedTerminals[index];
+      const padding = Array.from({ length: 32 }, () => ({}));
+      selected?.setHookLayers([padding, padding.map(() => ({})), selected.runtimeRefs]);
+    },
+    restoreTerminalRuntime(index = 0) {
+      const selected = mountedTerminals[index];
+      if (selected) selected.setHookLayers([selected.runtimeRefs]);
+    },
+    focusTerminal(index = 0) { document.activeElement = mountedTerminals[index]?.textarea || null; },
+    blurTerminal() { document.activeElement = null; },
+    mountTerminal(fontSize = 13) {
+      const next = makeTerminal(fontSize);
+      mountedTerminals.push(next);
+      return next;
+    },
     timers,
   };
 }
@@ -327,7 +466,7 @@ test("CSS styles the app UI, conversation, and current Markdown file editor", ()
   assert.match(css, /--chat-font-weight:\s*500/);
   assert.match(css, /--chat-code-font-weight:\s*400/);
   assert.match(css, /--chat-code-font-size:\s*14px/);
-  assert.match(css, /--chat-code-font-family:\s*"Cascadia Code",\s*var\(--chat-native-code-font-family\)/);
+  assert.match(css, /--chat-code-font-family:\s*"Cascadia Code",\s*var\(--chat-native-code-font-family,\s*ui-monospace,\s*monospace\)/);
   assert.match(css, /:where\(pre, code, kbd, samp, \.inline-markdown\)/);
   assert.match(css, /\.cm-markdown-code-line/);
   assert.match(css, /--chat-code-surface:\s*color-mix/);
@@ -336,6 +475,8 @@ test("CSS styles the app UI, conversation, and current Markdown file editor", ()
   assert.match(css, /--chat-font-family:\s*"Oxanium",\s*"LXGW WenKai Screen"/);
   assert.match(css, /\.chatgpt-restyle-font-root body \*/);
   assert.match(css, /font-family:\s*var\(--chat-ui-font-family\),\s*system-ui,\s*sans-serif/);
+  assert.match(css, /\.chatgpt-restyle-font-root \[data-codex-xterm\] \*/);
+  assert.match(css, /font-family:\s*var\(--chat-code-font-family\) !important/);
   assert.match(css, /\.chatgpt-chat-typography-message/);
   assert.match(css, /\.chatgpt-chat-typography-message:not\([\s\S]*?font-family:\s*var\(--chat-font-family\)/);
   assert.match(css, /\.cm-editor/);
@@ -344,10 +485,164 @@ test("CSS styles the app UI, conversation, and current Markdown file editor", ()
   assert.match(template, /\[data-content-search-unit-key\$=":assistant"\]/);
   assert.match(template, /\.cm-editor/);
   assert.match(template, /\[class\*="_markdownContent_"\]\.text-size-chat/);
+  assert.match(template, /\[data-codex-xterm\]/);
+  assert.match(template, /__reactFiber\$/);
   assert.doesNotMatch(template, /data-plan-selection-surface/);
   assert.doesNotMatch(css, /\[data-message-author-role\]|\[class\*="_markdown"\]/);
   assert.doesNotMatch(css, /Songti|STSong/i);
   assert.doesNotMatch(css, /(?:^|\n)\s*(?:html|main)\b/);
+});
+
+test("applies persisted Terminal zoom to every xterm and restores native metrics", () => {
+  const current = fixture({
+    storedZoom: "130",
+    storedTerminalZoom: "120",
+    withTerminal: true,
+    withSecondTerminal: true,
+  });
+  const result = vm.runInNewContext(current.payload, current.context);
+
+  assert.equal(result.contentZoomPercent, 130);
+  assert.equal(result.terminalZoomPercent, 120);
+  assert.deepEqual(
+    current.terminalInstances.map(({ options }) => options.fontSize),
+    [15.6, 18],
+  );
+  assert.deepEqual(current.terminalFitAddons.map(({ fitCalls }) => fitCalls), [1, 1]);
+  assert.deepEqual(current.terminalDecoyFitAddons.map(({ fitCalls }) => fitCalls), [0, 0]);
+  assert.deepEqual(
+    current.terminalDecoyInstances.map(({ options }) => options.fontSize),
+    [11, 11],
+    "an unrelated xterm ref must not be selected without its matching FitAddon",
+  );
+  for (const instance of current.terminalInstances) {
+    assert.equal(instance.options.fontFamily, TERMINAL_CUSTOM_FONT_FAMILY);
+  }
+  assert.equal(
+    current.terminalRoot.style.getPropertyValue("--chat-native-code-font-family"),
+    TERMINAL_NATIVE_FONT_FAMILY,
+  );
+
+  vm.runInNewContext(current.payload, current.context);
+  assert.deepEqual(
+    current.terminalInstances.map(({ options }) => options.fontSize),
+    [15.6, 18],
+    "reapply must not compound Terminal zoom",
+  );
+  assert.deepEqual(
+    current.terminalFitAddons.map(({ fitCalls }) => fitCalls),
+    [3, 3],
+    "reapply must fit both restored and reapplied sizes",
+  );
+
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.cleanup(), true);
+  assert.deepEqual(
+    current.terminalInstances.map(({ options }) => options.fontSize),
+    [13, 15],
+  );
+  assert.deepEqual(current.terminalFitAddons.map(({ fitCalls }) => fitCalls), [4, 4]);
+  for (const instance of current.terminalInstances) {
+    assert.equal(instance.options.fontFamily, TERMINAL_NATIVE_FONT_FAMILY);
+  }
+  for (const fitAddon of current.terminalFitAddons) {
+    assert.equal(
+      fitAddon.fitFontFamilies.at(-1),
+      TERMINAL_NATIVE_FONT_FAMILY,
+      "cleanup must fit the restored size against the restored native font",
+    );
+  }
+  assert.equal(current.terminalRoot.style.values.size, 0);
+});
+
+test("bounds Terminal Fiber lookup across all parent hooks", () => {
+  const current = fixture({
+    storedTerminalZoom: "120",
+    withTerminal: true,
+  });
+  current.buryTerminalRuntimeBeyondHookLimit();
+  vm.runInNewContext(current.payload, current.context);
+
+  assert.equal(current.terminalInstance.options.fontSize, 13);
+  assert.equal(current.terminalFitAddon.fitCalls, 0);
+  current.restoreTerminalRuntime();
+  current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.sync();
+  assert.equal(current.terminalInstance.options.fontSize, 15.6);
+  assert.equal(current.terminalFitAddon.fitCalls, 1);
+});
+
+test("isolates Terminal font-size assignment and FitAddon failures", () => {
+  const failedAssignment = fixture({
+    firstTerminalFontSizeWriteThrows: true,
+    storedTerminalZoom: "120",
+    withTerminal: true,
+    withSecondTerminal: true,
+  });
+  vm.runInNewContext(failedAssignment.payload, failedAssignment.context);
+  assert.deepEqual(
+    failedAssignment.terminalInstances.map(({ options }) => options.fontSize),
+    [13, 18],
+  );
+  assert.deepEqual(
+    failedAssignment.terminalFitAddons.map(({ fitCalls }) => fitCalls),
+    [0, 1],
+  );
+
+  const failedFit = fixture({
+    firstTerminalFitThrows: true,
+    storedTerminalZoom: "120",
+    withTerminal: true,
+    withSecondTerminal: true,
+  });
+  vm.runInNewContext(failedFit.payload, failedFit.context);
+  assert.deepEqual(
+    failedFit.terminalInstances.map(({ options }) => options.fontSize),
+    [15.6, 18],
+  );
+  assert.deepEqual(failedFit.terminalFitAddons.map(({ fitCalls }) => fitCalls), [1, 1]);
+  assert.equal(failedFit.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.cleanup(), true);
+  assert.deepEqual(
+    failedFit.terminalInstances.map(({ options }) => options.fontSize),
+    [13, 15],
+  );
+  assert.deepEqual(failedFit.terminalFitAddons.map(({ fitCalls }) => fitCalls), [2, 2]);
+});
+
+test("tracks theme Terminal base size changes and resets to the latest base", () => {
+  const current = fixture({
+    storedTerminalZoom: "120",
+    withTerminal: true,
+  });
+  vm.runInNewContext(current.payload, current.context);
+  assert.equal(current.terminalInstance.options.fontSize, 15.6);
+  assert.equal(current.terminalFitAddon.fitCalls, 1);
+
+  current.terminalInstance.options.fontSize = 14;
+  current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.sync();
+  assert.equal(current.terminalInstance.options.fontSize, 16.8);
+  assert.equal(current.terminalFitAddon.fitCalls, 2);
+
+  current.focusTerminal();
+  current.dispatch("keydown", keyboardEvent("Digit0"));
+  assert.equal(current.terminalInstance.options.fontSize, 14);
+  assert.equal(current.terminalFitAddon.fitCalls, 3);
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.cleanup(), true);
+  assert.equal(current.terminalInstance.options.fontSize, 14);
+  assert.equal(current.terminalFitAddon.fitCalls, 3);
+});
+
+test("keeps Terminal zoom independent when its runtime font update fails", () => {
+  const current = fixture({
+    storedTerminalZoom: "120",
+    terminalFontWriteThrows: true,
+    withTerminal: true,
+  });
+  vm.runInNewContext(current.payload, current.context);
+
+  assert.equal(current.terminalInstance.options.fontFamily, TERMINAL_NATIVE_FONT_FAMILY);
+  assert.equal(current.terminalInstance.options.fontSize, 15.6);
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.cleanup(), true);
+  assert.equal(current.terminalInstance.options.fontSize, 13);
+  assert.equal(current.terminalRoot.style.values.size, 0);
 });
 
 test("excludes queued messages from every custom typography rule", () => {
@@ -500,11 +795,19 @@ test("loads persisted zoom and falls back for invalid or unavailable storage", (
     );
   }
 
+  for (const storedTerminalZoom of ["59", "161", "90.5", "invalid"]) {
+    const invalid = fixture({ storedTerminalZoom, withTerminal: true });
+    assert.equal(
+      vm.runInNewContext(invalid.payload, invalid.context).terminalZoomPercent,
+      100,
+    );
+    assert.equal(invalid.terminalInstance.options.fontSize, 13);
+  }
+
   const unavailable = fixture({ storageThrows: true });
-  assert.equal(
-    vm.runInNewContext(unavailable.payload, unavailable.context).contentZoomPercent,
-    100,
-  );
+  const unavailableResult = vm.runInNewContext(unavailable.payload, unavailable.context);
+  assert.equal(unavailableResult.contentZoomPercent, 100);
+  assert.equal(unavailableResult.terminalZoomPercent, 100);
 });
 
 test("keeps every zoom level within a fixed visual inline size", () => {
@@ -562,6 +865,93 @@ test("handles exact zoom shortcuts, persists changes, resets, and enforces limit
   current.dispatch("keydown", keyboardEvent("Digit0"));
   assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "100");
   assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.contentZoomPercent, 100);
+});
+
+test("routes zoom shortcuts by Terminal focus without changing content zoom", () => {
+  const current = fixture({ withTerminal: true, withSecondTerminal: true });
+  vm.runInNewContext(current.payload, current.context);
+  current.focusTerminal();
+
+  const zoomIn = keyboardEvent("Equal");
+  current.dispatch("keydown", zoomIn);
+  assert.equal(zoomIn.defaultPrevented, true);
+  assert.equal(zoomIn.immediatePropagationStopped, true);
+  assert.equal(current.storage.get(TERMINAL_ZOOM_STORAGE_KEY), "110");
+  assert.equal(current.storage.has(ZOOM_STORAGE_KEY), false);
+  assert.equal(
+    current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.contentZoomPercent,
+    100,
+  );
+  assert.equal(
+    current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.terminalZoomPercent,
+    110,
+  );
+  assert.deepEqual(
+    current.terminalInstances.map(({ options }) => options.fontSize),
+    [14.3, 16.5],
+  );
+  assert.deepEqual(current.terminalFitAddons.map(({ fitCalls }) => fitCalls), [1, 1]);
+  assert.deepEqual(current.terminalDecoyFitAddons.map(({ fitCalls }) => fitCalls), [0, 0]);
+  assert.equal(current.nodes.get(ZOOM_TOAST_ID).textContent, "Terminal 缩放 110%");
+
+  for (let index = 0; index < 10; index += 1) {
+    current.dispatch("keydown", keyboardEvent("NumpadSubtract"));
+  }
+  assert.equal(current.storage.get(TERMINAL_ZOOM_STORAGE_KEY), "60");
+  assert.deepEqual(
+    current.terminalInstances.map(({ options }) => options.fontSize),
+    [7.8, 9],
+  );
+
+  for (let index = 0; index < 20; index += 1) {
+    current.dispatch("keydown", keyboardEvent("NumpadAdd"));
+  }
+  assert.equal(current.storage.get(TERMINAL_ZOOM_STORAGE_KEY), "160");
+  assert.deepEqual(
+    current.terminalInstances.map(({ options }) => options.fontSize),
+    [20.8, 24],
+  );
+
+  current.dispatch("keydown", keyboardEvent("Digit0"));
+  assert.equal(current.storage.get(TERMINAL_ZOOM_STORAGE_KEY), "100");
+  assert.deepEqual(
+    current.terminalInstances.map(({ options }) => options.fontSize),
+    [13, 15],
+  );
+  assert.deepEqual(current.terminalFitAddons.map(({ fitCalls }) => fitCalls), [17, 17]);
+
+  current.blurTerminal();
+  current.dispatch("keydown", keyboardEvent("Equal"));
+  assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "110");
+  assert.equal(current.storage.get(TERMINAL_ZOOM_STORAGE_KEY), "100");
+  assert.equal(current.nodes.get(ZOOM_TOAST_ID).textContent, "正文缩放 110%");
+});
+
+test("synchronizes Terminal zoom across windows and newly mounted xterms", () => {
+  const current = fixture({ withTerminal: true });
+  vm.runInNewContext(current.payload, current.context);
+
+  current.dispatch("storage", { key: TERMINAL_ZOOM_STORAGE_KEY, newValue: "140" });
+  assert.equal(
+    current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.terminalZoomPercent,
+    140,
+  );
+  assert.equal(current.terminalInstance.options.fontSize, 18.2);
+  assert.equal(current.terminalFitAddon.fitCalls, 1);
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.contentZoomPercent, 100);
+  assert.equal(current.nodes.has(ZOOM_TOAST_ID), false);
+
+  const mounted = current.mountTerminal(16);
+  current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.sync();
+  assert.equal(mounted.instance.options.fontSize, 22.4);
+  assert.equal(mounted.fitAddon.fitCalls, 1);
+  assert.equal(mounted.instance.options.fontFamily, TERMINAL_CUSTOM_FONT_FAMILY);
+
+  current.dispatch("storage", { key: TERMINAL_ZOOM_STORAGE_KEY, newValue: "invalid" });
+  assert.equal(current.terminalInstance.options.fontSize, 13);
+  assert.equal(current.terminalFitAddon.fitCalls, 2);
+  assert.equal(mounted.instance.options.fontSize, 16);
+  assert.equal(mounted.fitAddon.fitCalls, 2);
 });
 
 test("ignores other shortcuts and synchronizes storage changes without a toast", () => {
@@ -676,7 +1066,12 @@ test("reports a missing font and cleanup fully detaches the thread", () => {
 });
 
 test("font can be disabled while zoom remains active", () => {
-  const current = fixture({ fontEnabled: false, zoomEnabled: true });
+  const current = fixture({
+    fontEnabled: false,
+    zoomEnabled: true,
+    storedTerminalZoom: "120",
+    withTerminal: true,
+  });
   const result = vm.runInNewContext(current.payload, current.context);
 
   assert.equal(result.fontEnabled, false);
@@ -694,6 +1089,10 @@ test("font can be disabled while zoom remains active", () => {
   );
   assert.equal(current.nodes.has(ZOOM_STYLE_ID), true);
   assert.equal(current.listeners.get("keydown").size, 1);
+  assert.equal(current.terminalInstance.options.fontFamily, TERMINAL_NATIVE_FONT_FAMILY);
+  assert.equal(current.terminalInstance.options.fontSize, 15.6);
+  assert.equal(current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.cleanup(), true);
+  assert.equal(current.terminalInstance.options.fontSize, 13);
 });
 
 test("zoom layout is identical with custom typography enabled or disabled", () => {
@@ -739,7 +1138,13 @@ test("zoom layout is identical with custom typography enabled or disabled", () =
 });
 
 test("zoom can be disabled while typography remains active", () => {
-  const current = fixture({ fontEnabled: true, zoomEnabled: false, storedZoom: "130" });
+  const current = fixture({
+    fontEnabled: true,
+    zoomEnabled: false,
+    storedZoom: "130",
+    storedTerminalZoom: "120",
+    withTerminal: true,
+  });
   const result = vm.runInNewContext(current.payload, current.context);
 
   assert.equal(result.fontEnabled, true);
@@ -752,6 +1157,9 @@ test("zoom can be disabled while typography remains active", () => {
   assert.equal(current.listeners.has("keydown"), false);
   assert.equal(current.listeners.has("storage"), false);
   assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "130");
+  assert.equal(current.storage.get(TERMINAL_ZOOM_STORAGE_KEY), "120");
+  assert.equal(current.terminalInstance.options.fontSize, 13);
+  assert.equal(current.terminalInstance.options.fontFamily, TERMINAL_CUSTOM_FONT_FAMILY);
 });
 
 test("both features can be disabled without changing the renderer", () => {
@@ -772,9 +1180,16 @@ test("both features can be disabled without changing the renderer", () => {
 });
 
 test("reapply fully removes artifacts from features that become disabled", () => {
-  const current = fixture({ storedZoom: "120" });
+  const current = fixture({
+    storedZoom: "120",
+    storedTerminalZoom: "120",
+    withTerminal: true,
+  });
   vm.runInNewContext(current.payload, current.context);
+  assert.equal(current.terminalInstance.options.fontSize, 15.6);
+  current.focusTerminal();
   current.dispatch("keydown", keyboardEvent("Equal"));
+  assert.equal(current.terminalInstance.options.fontSize, 16.9);
   assert.equal(current.nodes.has(ZOOM_TOAST_ID), true);
 
   const result = vm.runInNewContext(
@@ -796,5 +1211,9 @@ test("reapply fully removes artifacts from features that become disabled", () =>
   assert.equal(current.listeners.get("keydown").size, 0);
   assert.equal(current.listeners.get("storage").size, 0);
   assert.equal(current.timers.size, 0);
-  assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "130");
+  assert.equal(current.storage.get(ZOOM_STORAGE_KEY), "120");
+  assert.equal(current.storage.get(TERMINAL_ZOOM_STORAGE_KEY), "130");
+  assert.equal(current.terminalInstance.options.fontSize, 13);
+  assert.equal(current.terminalInstance.options.fontFamily, TERMINAL_NATIVE_FONT_FAMILY);
+  assert.equal(current.terminalRoot.style.values.size, 0);
 });

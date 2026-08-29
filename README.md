@@ -20,7 +20,7 @@ ChatGPT Restyle 是一个修改 ChatGPT Desktop 界面、对话区域、右侧 M
   （英文 `Oxanium`、中文 `LXGW WenKai Screen`）
 - 块间距：`0.75em`
 - 消息间距：`24px`
-- 代码：优先使用 `Cascadia Code`，未安装时回退到 ChatGPT 原生代码字体
+- 代码及 Terminal：优先使用 `Cascadia Code`，未安装时回退到 ChatGPT 原生等宽字体
 
 ## 使用
 
@@ -53,19 +53,21 @@ Raycast 的 Script Commands 目录应包含：
 编辑 [`assets/chat-typography.css`](./assets/chat-typography.css) 顶部的 CSS
 变量。ChatGPT 已由 ChatGPT Restyle 启动时，保存文件后会自动热更新。
 
-## 正文缩放
+## 正文与 Terminal 缩放
 
-ChatGPT Restyle 可以统一缩放对话正文、Markdown 文件正文和 Plan 正文，不改变
-输入框、队列消息、侧栏、顶部栏或面板 chrome：
+ChatGPT Restyle 使用同一组快捷键按键盘焦点缩放不同区域：焦点位于 Terminal 时
+调整所有 Terminal 的 xterm 运行时字号；其他情况下统一缩放对话正文、Markdown
+文件正文和 Plan 正文，不改变输入框、队列消息、侧栏、顶部栏或面板 chrome：
 
 - `Control` + `Shift` + `+`：放大 10%
 - `Control` + `Shift` + `-`：缩小 10%
 - `Control` + `Shift` + `0`：恢复 100%
 
-缩放范围为 60%–160%。当前比例会短暂显示在页面底部，并由 ChatGPT 的本地存储
-保存；所有任务、正文区域和标签页共用同一比例，刷新或重启后仍会保留。
+Terminal 与正文各自使用独立的 60%–160% 比例，并分别保存在 ChatGPT 的本地存储中；
+所有任务、标签页和已挂载 Terminal 会同步对应比例，刷新或重启后仍会保留。Terminal
+恢复到 100% 时使用当前主题提供的基础字号。当前操作及比例会短暂显示在页面底部。
 `Restore.command` 只移除当前注入效果，不删除已保存的比例。ChatGPT 原有的
-`Command` + `+` / `-` 整窗缩放快捷键保持不变。缩放只改变正文内容的显示比例和
+`Command` + `+` / `-` 整窗缩放快捷键保持不变。正文缩放只改变内容的显示比例和
 换行，不会扩大对话、Markdown 预览或 Plan 正文列的视觉宽度。
 
 ## 功能开关
@@ -78,8 +80,8 @@ CHATGPT_RESTYLE_ZOOM_ENABLED=true
 ```
 
 两个配置缺省时均为 `true`，且只接受小写的 `true` 或 `false`。字体开关控制
-字体、字号、字重、行高、间距和代码样式；缩放开关控制正文 zoom、快捷键和比例
-Toast。关闭缩放不会删除已保存在 ChatGPT localStorage 中的比例。
+字体、字号、字重、行高、间距和代码样式；缩放开关控制正文 zoom、Terminal 运行时
+字号、快捷键和比例 Toast。关闭缩放不会删除已保存在 ChatGPT localStorage 中的比例。
 
 修改功能开关后，再次运行 Apply 或 Raycast 命令即可在当前 CDP 会话生效；
 ChatGPT 不会重启。后台 watcher 会在配置变化时原地更新，继续处理页面重载和
@@ -177,6 +179,10 @@ main.main-surface .thread-scroll-container
 [role="tabpanel"][aria-label$=".md"] .cm-editor
 [role="tabpanel"][aria-label="Plan"]
   [class*="_markdownContent_"].text-size-chat
+[data-codex-xterm]
 ```
 
-ChatGPT 更新后如果该结构变化，需要根据当前 renderer DOM 更新选择器和测试。
+Terminal 除了覆盖 CSS 字体，还会同步 xterm 的运行时 `fontFamily` 与按主题基础字号
+计算的 `fontSize`，并在字号变化后调用对应 FitAddon 重新适配面板宽度，确保字符测量、
+当前输入行、光标和实际布局一致。ChatGPT 更新后如果上述 DOM 或 xterm 挂载结构变化，
+需要根据当前 renderer 更新定位逻辑和测试。
