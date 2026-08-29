@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Verify against: index"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Verify against: directory-structure"}
+{"file": ".trellis/spec/frontend/renderer-injection.md", "reason": "Verify against: renderer-injection"}
+{"file": ".trellis/spec/frontend/injector-cdp.md", "reason": "Verify against: injector-cdp"}
+{"file": ".trellis/spec/frontend/shell-scripts.md", "reason": "Verify against: shell-scripts"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify against: state-management"}
+{"file": ".trellis/spec/frontend/validation-guidelines.md", "reason": "Verify against: validation-guidelines"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Verify against: quality-guidelines"}

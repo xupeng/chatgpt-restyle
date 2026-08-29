@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Layer index and scope"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Repo layout and naming"}
+{"file": ".trellis/spec/frontend/renderer-injection.md", "reason": "Renderer + CSS conventions"}
+{"file": ".trellis/spec/frontend/injector-cdp.md", "reason": "Node CDP layer"}
+{"file": ".trellis/spec/frontend/shell-scripts.md", "reason": "macOS shell layer"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Cross-layer state contracts"}
+{"file": ".trellis/spec/frontend/validation-guidelines.md", "reason": "Input validation rules"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Testing and review standards"}

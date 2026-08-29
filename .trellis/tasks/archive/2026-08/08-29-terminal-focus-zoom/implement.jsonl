@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Renderer layer scope, language conventions, and relevant guide routing"}
+{"file":".trellis/spec/frontend/renderer-injection.md","reason":"Injected renderer lifecycle, zoom shortcuts, CSS scoping, and cleanup contracts"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"localStorage persistence, storage-event synchronization, and re-injection state contracts"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Extend the existing zoom and terminal runtime mechanisms without duplicating state logic"}

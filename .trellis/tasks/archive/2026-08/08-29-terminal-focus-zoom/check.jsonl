@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Verify renderer scope and project language conventions"}
+{"file":".trellis/spec/frontend/renderer-injection.md","reason":"Verify terminal targeting, idempotent re-injection, and total cleanup"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify independent persisted zoom state and cross-window synchronization"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required renderer tests, full test suite, doctor gate, and review checklist"}
