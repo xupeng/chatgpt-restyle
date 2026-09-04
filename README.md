@@ -172,10 +172,10 @@ doctor 会检查项目文件、Shell/Node 语法、ChatGPT App 签名和内置 N
 承载的 Markdown 文件正文，以及 Plan 标签页的 Markdown 正文：
 
 ```text
-main.main-surface .thread-scroll-container
-  [data-user-message-bubble="true"] [class*="_markdownContent_"]
-main.main-surface .thread-scroll-container
-  [data-content-search-unit-key$=":assistant"] [class*="_markdownContent_"]
+main[data-app-shell-main-surface="default"] .thread-scroll-container
+  [data-markdown-text-tone="user-message"]
+main[data-app-shell-main-surface="default"] .thread-scroll-container
+  [data-markdown-text-style="assistant-message"]
 [role="tabpanel"][aria-label$=".md"] .cm-editor
 [role="tabpanel"][aria-label="Plan"]
   [class*="_markdownContent_"].text-size-chat

@@ -21,8 +21,8 @@ const TERMINAL_NATIVE_FONT_FAMILY = 'ui-monospace, "SFMono-Regular", Menlo, mono
 const TERMINAL_CUSTOM_FONT_FAMILY = `"Cascadia Code", ${TERMINAL_NATIVE_FONT_FAMILY}`;
 const MESSAGE_CLASS = "chatgpt-chat-typography-message";
 const MESSAGE_SELECTOR = [
-  '[data-user-message-bubble="true"] [class*="_markdownContent_"]',
-  '[data-content-search-unit-key$=":assistant"] [class*="_markdownContent_"]',
+  '[data-markdown-text-tone="user-message"]',
+  '[data-markdown-text-style="assistant-message"]',
 ].join(", ");
 
 function styleDeclaration() {
@@ -271,7 +271,10 @@ function fixture({
     },
     getElementById(id) { return nodes.get(id) || null; },
     querySelector(selector) {
-      if (selector === "main.main-surface .thread-scroll-container") {
+      if (
+        selector
+        === 'main[data-app-shell-main-surface="default"] .thread-scroll-container'
+      ) {
         return thread;
       }
       if (selector === "aside.app-shell-left-panel") return sidebar;
@@ -481,8 +484,10 @@ test("CSS styles the app UI, conversation, and current Markdown file editor", ()
   assert.match(css, /\.chatgpt-chat-typography-message:not\([\s\S]*?font-family:\s*var\(--chat-font-family\)/);
   assert.match(css, /\.cm-editor/);
   assert.match(css, /\.cm-scroller, \.cm-content, \.cm-line/);
-  assert.match(template, /\[data-user-message-bubble="true"\]/);
-  assert.match(template, /\[data-content-search-unit-key\$=":assistant"\]/);
+  assert.match(template, /main\[data-app-shell-main-surface="default"\]/);
+  assert.match(template, /\[data-markdown-text-tone="user-message"\]/);
+  assert.match(template, /\[data-markdown-text-style="assistant-message"\]/);
+  assert.doesNotMatch(template, /main\.main-surface/);
   assert.match(template, /\.cm-editor/);
   assert.match(template, /\[class\*="_markdownContent_"\]\.text-size-chat/);
   assert.match(template, /\[data-codex-xterm\]/);

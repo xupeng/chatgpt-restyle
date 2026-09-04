@@ -62,23 +62,25 @@ Rules:
 
 ## DOM targeting: attribute selectors, not hashed classes
 
-ChatGPT's renderer uses hashed CSS-module class names (`_markdownContent_`
-etc.) that change between releases. Selectors therefore target **stable
-attributes and structural positions**:
+ChatGPT's renderer uses hashed CSS-module class names that change between
+releases. Selectors therefore target **stable attributes and structural
+positions**:
 
 ```js
 const MESSAGE_SELECTOR = [
-  '[data-user-message-bubble="true"] [class*="_markdownContent_"]',
-  '[data-content-search-unit-key$=":assistant"] [class*="_markdownContent_"]',
+  '[data-markdown-text-tone="user-message"]',
+  '[data-markdown-text-style="assistant-message"]',
 ].join(", ");
 const MARKDOWN_FILE_EDITOR_SELECTOR = '[role="tabpanel"][aria-label] .cm-editor';
 const PLAN_PANEL_SELECTOR = '[role="tabpanel"][aria-label="Plan"]';
-const THREAD_SELECTOR = "main.main-surface .thread-scroll-container";
+const THREAD_SELECTOR =
+  'main[data-app-shell-main-surface="default"] .thread-scroll-container';
 ```
 
 Notes:
-- `[class*="_markdownContent_"]` uses a partial match on the hashed token —
-  keep the underscore prefix so it cannot collide with other classes.
+- `data-app-shell-main-surface`, `data-markdown-text-tone`, and
+  `data-markdown-text-style` are semantic renderer attributes; prefer them to
+  CSS-module class fragments and message-key suffixes.
 - ChatGPT's DOM is volatile by design. When the renderer changes, update the
   selectors **and** the tests that assert them (see
   `tests/renderer-inject.test.mjs` and README "当前版本边界"). There are no
@@ -288,5 +290,4 @@ owned by this injection, so app-side updates are not overwritten.
 - Re-applying classes on every `sync()` run instead of set-diffing.
 - Adding cleanup paths that miss one of the injected artifacts
   (style elements, toast, custom properties, root class).
-- Targeting hashed class names directly (`._markdownContent_` without the
-  `[class*="..."]` partial-match guard).
+- Targeting hashed CSS-module class names when a semantic attribute exists.

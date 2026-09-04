@@ -17,11 +17,11 @@
   const MIN_ZOOM_PERCENT = 60;
   const MAX_ZOOM_PERCENT = 160;
   const ZOOM_STEP_PERCENT = 10;
-  const MAIN_SURFACE_SELECTOR = "main.main-surface";
+  const MAIN_SURFACE_SELECTOR = 'main[data-app-shell-main-surface="default"]';
   const THREAD_SELECTOR = `${MAIN_SURFACE_SELECTOR} .thread-scroll-container`;
   const MESSAGE_SELECTOR = [
-    '[data-user-message-bubble="true"] [class*="_markdownContent_"]',
-    '[data-content-search-unit-key$=":assistant"] [class*="_markdownContent_"]',
+    '[data-markdown-text-tone="user-message"]',
+    '[data-markdown-text-style="assistant-message"]',
   ].join(", ");
   const THREAD_FOOTER_SELECTOR =
     ':scope > * > [data-thread-scroll-footer="true"]';
