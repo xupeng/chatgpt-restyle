@@ -80,9 +80,9 @@ trusted until validated:
   `redirect: "error"` and a 2 s AbortController timeout; non-JSON or
   non-array responses throw.
 - `connectChatGPTTargets` probes each candidate with a `probe()` expression
-  that must see **both** `main.main-surface` and `aside.app-shell-left-panel`
-  before accepting it as a ChatGPT renderer. It retries until `timeoutMs`
-  deadline, 250 ms apart.
+  that must see **both** `main[data-app-shell-main-surface="default"]` and
+  `aside.app-shell-left-panel` before accepting it as a ChatGPT renderer. It
+  retries until `timeoutMs` deadline, 250 ms apart.
 - `CdpSession.send` times out per command (default 10 s), rejects when the
   socket closes, and `evaluate` re-throws `exceptionDetails` so renderer
   exceptions surface as injector errors.
