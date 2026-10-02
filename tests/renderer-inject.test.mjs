@@ -181,13 +181,12 @@ function fixture({
     style: styleDeclaration(),
     previousElementSibling: threadContent,
   };
-  const threadWrapper = { parentElement: null };
   const thread = {
     classList: classList(),
     style: styleDeclaration(),
     querySelector(selector) {
-      if (selector === ':scope > * > [data-thread-scroll-footer="true"]') {
-        return threadFooter;
+      if (selector === '[data-thread-user-message-navigation-content="true"]') {
+        return threadContent;
       }
       if (selector === MESSAGE_SELECTOR) return assistantMessage;
       return selector === "pre code, code, kbd, samp, .inline-markdown, .cm-markdown-code-line"
@@ -206,8 +205,7 @@ function fixture({
       return previewInsideThread && node === markdownFileEditor;
     },
   };
-  threadWrapper.parentElement = thread;
-  threadFooter.parentElement = threadWrapper;
+  threadFooter.parentElement = thread;
   const markdownPanel = {
     getAttribute(name) { return name === "aria-label" ? markdownFilename : null; },
   };
@@ -281,6 +279,9 @@ function fixture({
       return null;
     },
     querySelectorAll(selector) {
+      if (selector === 'main[data-app-shell-main-surface="default"] .thread-scroll-container') {
+        return [thread];
+      }
       if (selector === '[role="tabpanel"][aria-label] .cm-editor') {
         return withMarkdownFileEditor
           ? [markdownFileEditor]
@@ -779,6 +780,22 @@ test("zooms the conversation, Markdown file, and Plan roots without the footer o
   );
 });
 
+test("does not zoom the footer when the semantic transcript is not mounted", () => {
+  const current = fixture();
+  const originalQuery = current.thread.querySelector;
+  current.thread.querySelector = (selector) => selector
+    === '[data-thread-user-message-navigation-content="true"]'
+    ? null
+    : originalQuery(selector);
+  vm.runInNewContext(current.payload, current.context);
+  assert.equal(current.threadContent.classList.contains(ZOOM_CLASS), false);
+  assert.equal(current.threadFooter.classList.contains(ZOOM_CLASS), false);
+  current.thread.querySelector = originalQuery;
+  current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.sync();
+  assert.equal(current.threadContent.classList.contains(ZOOM_CLASS), true);
+  assert.equal(current.threadFooter.classList.contains(ZOOM_CLASS), false);
+});
+
 test("loads persisted zoom and falls back for invalid or unavailable storage", () => {
   const persisted = fixture({ storedZoom: "130" });
   const result = vm.runInNewContext(persisted.payload, persisted.context);
@@ -1053,6 +1070,46 @@ test("injects once, captures native fonts, and leaves sidebar untouched", () => 
     current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.nativeFontFamily,
     '-apple-system, "PingFang SC", sans-serif',
   );
+});
+
+test("styles and zooms every mounted thread, then detaches removed threads", () => {
+  const current = fixture({ withQueuedMessages: true, withCodeSamples: true });
+  const second = fixture({ withQueuedMessages: true });
+  let threads = [current.thread, second.thread];
+  const originalQueryAll = current.context.document.querySelectorAll;
+  current.context.document.querySelectorAll = (selector) => selector
+    === 'main[data-app-shell-main-surface="default"] .thread-scroll-container'
+    ? threads
+    : originalQueryAll(selector);
+
+  vm.runInNewContext(current.payload, current.context);
+  for (const item of [current, second]) {
+    assert.equal(item.thread.classList.contains("chatgpt-chat-typography-thread"), true);
+    assert.ok(item.thread.style.getPropertyValue("--chat-native-font-family"));
+    assert.equal(item.userMessage.classList.contains(MESSAGE_CLASS), true);
+    assert.equal(item.assistantMessage.classList.contains(MESSAGE_CLASS), true);
+    assert.equal(item.queuedMessages.classList.contains("chatgpt-chat-typography-native-ui"), true);
+    assert.equal(item.threadContent.classList.contains(ZOOM_CLASS), true);
+    assert.equal(item.threadContent.classList.contains(THREAD_ZOOM_LAYOUT_CLASS), true);
+  }
+  threads = [second.thread];
+  current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.sync();
+  assert.equal(current.thread.classList.contains("chatgpt-chat-typography-thread"), false);
+  assert.equal(current.thread.style.getPropertyValue("--chat-native-font-family"), "");
+  assert.equal(current.thread.style.getPropertyValue("--chat-native-code-font-family"), "");
+  assert.equal(current.userMessage.classList.contains(MESSAGE_CLASS), false);
+  assert.equal(current.threadContent.classList.contains(ZOOM_CLASS), false);
+  assert.equal(current.threadContent.classList.contains(THREAD_ZOOM_LAYOUT_CLASS), false);
+  assert.equal(current.queuedMessages.classList.contains("chatgpt-chat-typography-native-ui"), false);
+  assert.equal(second.thread.classList.contains("chatgpt-chat-typography-thread"), true);
+
+  vm.runInNewContext(current.payloadFor({ fontEnabled: false }), current.context);
+  assert.equal(second.thread.classList.contains("chatgpt-chat-typography-thread"), false);
+  assert.equal(second.userMessage.classList.contains(MESSAGE_CLASS), false);
+  assert.equal(second.threadContent.classList.contains(ZOOM_CLASS), true);
+  current.context.window.__CHATGPT_CHAT_TYPOGRAPHY_STATE__.cleanup();
+  assert.equal(second.threadContent.classList.contains(ZOOM_CLASS), false);
+  assert.equal(second.threadContent.classList.contains(THREAD_ZOOM_LAYOUT_CLASS), false);
 });
 
 test("reports a missing font and cleanup fully detaches the thread", () => {

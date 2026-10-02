@@ -23,8 +23,8 @@
     '[data-markdown-text-tone="user-message"]',
     '[data-markdown-text-style="assistant-message"]',
   ].join(", ");
-  const THREAD_FOOTER_SELECTOR =
-    ':scope > * > [data-thread-scroll-footer="true"]';
+  const THREAD_CONTENT_SELECTOR =
+    '[data-thread-user-message-navigation-content="true"]';
   const QUEUED_MESSAGES_SELECTOR =
     '.vertical-scroll-fade-mask.hide-scrollbar[class*="max-h-[30dvh]"]';
   const MARKDOWN_FILE_EDITOR_SELECTOR =
@@ -50,7 +50,7 @@
   }
 
   let nativeFontFamily = fontEnabled ? previousNativeFontFamily : null;
-  let currentThread = null;
+  let currentThreads = new Set();
   let currentMessages = new Set();
   let currentPreviews = new Set();
   let currentPlans = new Set();
@@ -276,11 +276,11 @@
     plan.style.removeProperty("--chat-native-code-font-family");
   };
 
-  const findPreviews = (thread) => {
+  const findPreviews = (threads) => {
     return Array.from(
       document.querySelectorAll(MARKDOWN_FILE_EDITOR_SELECTOR),
     ).filter((editor) => {
-      if (thread?.contains?.(editor)) return false;
+      if ([...threads].some((thread) => thread.contains?.(editor))) return false;
       const panel = editor.closest?.('[role="tabpanel"][aria-label]');
       return MARKDOWN_FILE_EXTENSION.test(panel?.getAttribute?.("aria-label") || "");
     });
@@ -300,16 +300,15 @@
     ? Array.from(thread.querySelectorAll(QUEUED_MESSAGES_SELECTOR))
     : [];
 
-  const findThreadContent = (thread) => {
-    const footer = thread?.querySelector?.(THREAD_FOOTER_SELECTOR);
-    if (!footer || footer.parentElement?.parentElement !== thread) return null;
-    return footer.previousElementSibling || null;
-  };
+  const findThreadContent = (thread) =>
+    thread?.querySelector?.(THREAD_CONTENT_SELECTOR) || null;
 
-  const syncZoomRoots = (thread, previews, plans) => {
-    const threadContent = zoomEnabled ? findThreadContent(thread) : null;
+  const syncZoomRoots = (threads, previews, plans) => {
+    const threadContents = zoomEnabled
+      ? [...threads].map(findThreadContent).filter(Boolean)
+      : [];
     const roots = new Set(zoomEnabled ? [
-      threadContent,
+      ...threadContents,
       ...previews,
       ...plans,
     ].filter(Boolean) : []);
@@ -323,7 +322,7 @@
       root.classList.add(ZOOM_CLASS);
       root.classList.remove(THREAD_ZOOM_LAYOUT_CLASS);
     });
-    threadContent?.classList.add(THREAD_ZOOM_LAYOUT_CLASS);
+    threadContents.forEach((content) => content.classList.add(THREAD_ZOOM_LAYOUT_CLASS));
     currentZoomRoots = roots;
   };
 
@@ -576,9 +575,12 @@
   };
 
   const sync = () => {
-    const thread = document.querySelector(THREAD_SELECTOR);
-    if (currentThread && currentThread !== thread) detach(currentThread);
-    currentThread = thread;
+    const threads = new Set(document.querySelectorAll(THREAD_SELECTOR));
+    for (const thread of currentThreads) {
+      if (!threads.has(thread)) detach(thread);
+    }
+    currentThreads = threads;
+    const thread = threads.values().next().value;
     if (fontEnabled && thread && !nativeFontFamily) {
       nativeFontFamily = thread.style.getPropertyValue?.("--chat-native-font-family") || null;
     }
@@ -587,21 +589,21 @@
       nativeFontFamily = sampleNativeFontFamily(nativeSample);
     }
 
-    const messages = new Set(fontEnabled ? findMessages(thread) : []);
+    const messages = new Set(fontEnabled ? [...threads].flatMap(findMessages) : []);
     for (const message of currentMessages) {
       if (!messages.has(message)) detachMessage(message);
     }
     messages.forEach((message) => message.classList.add(MESSAGE_CLASS));
     currentMessages = messages;
 
-    const nativeUiRoots = new Set(fontEnabled ? findNativeUiRoots(thread) : []);
+    const nativeUiRoots = new Set(fontEnabled ? [...threads].flatMap(findNativeUiRoots) : []);
     for (const root of currentNativeUiRoots) {
       if (!nativeUiRoots.has(root)) detachNativeUi(root);
     }
     nativeUiRoots.forEach((root) => root.classList.add(NATIVE_UI_CLASS));
     currentNativeUiRoots = nativeUiRoots;
 
-    const previews = new Set(findPreviews(thread));
+    const previews = new Set(findPreviews(threads));
     for (const preview of currentPreviews) {
       if (!previews.has(preview)) detachPreview(preview);
     }
@@ -638,17 +640,19 @@
       if (fontEnabled) captureNativeCodeFont(plan, PLAN_CLASS);
     }
     currentPlans = plans;
-    if (fontEnabled && thread) {
-      thread.style.setProperty("--chat-native-font-family", nativeFontFamily || "system-ui, sans-serif");
-      captureNativeCodeFont(thread, THREAD_CLASS);
-      thread.classList.add(THREAD_CLASS);
+    for (const thread of threads) {
+      if (fontEnabled) {
+        thread.style.setProperty("--chat-native-font-family", nativeFontFamily || "system-ui, sans-serif");
+        captureNativeCodeFont(thread, THREAD_CLASS);
+        thread.classList.add(THREAD_CLASS);
+      }
+      else detach(thread);
     }
-    else detach(thread);
     ensureStyle();
     syncTerminals();
-    syncZoomRoots(thread, previews, plans);
+    syncZoomRoots(threads, previews, plans);
     if (window[STATE_KEY]) window[STATE_KEY].nativeFontFamily = nativeFontFamily;
-    return Boolean(thread || previews.size || plans.size);
+    return Boolean(threads.size || previews.size || plans.size);
   };
 
   const schedule = () => {
@@ -684,7 +688,7 @@
     currentTerminals.forEach(detachTerminal);
     currentTerminals = new Map();
     disposeZoom();
-    detach(currentThread);
+    currentThreads.forEach(detach);
     currentMessages.forEach(detachMessage);
     currentPreviews.forEach(detachPreview);
     currentPlans.forEach(detachPlan);
@@ -726,7 +730,7 @@
 
   return {
     installed: true,
-    threadFound: Boolean(currentThread),
+    threadFound: Boolean(currentThreads.size),
     previewCount: currentPreviews.size,
     planCount: currentPlans.size,
     nativeUiCount: currentNativeUiRoots.size,
