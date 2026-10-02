@@ -169,7 +169,8 @@ doctor 会检查项目文件、Shell/Node 语法、ChatGPT App 签名和内置 N
 
 工具只支持当前 ChatGPT App，不保留旧版应用或旧 Markdown renderer 的兼容分支。
 英文字体应用到整个界面；正文排版规则匹配对话流、文件面板中由 CodeMirror
-承载的 Markdown 文件正文，以及 Plan 标签页的 Markdown 正文：
+承载的 Markdown 文件正文，以及 Plan 标签页的 Markdown 正文。应用保留多个对话
+区域时，所有已挂载对话都会应用正文排版和缩放：
 
 ```text
 main[data-app-shell-main-surface="default"] .thread-scroll-container

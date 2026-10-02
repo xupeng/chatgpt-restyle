@@ -120,6 +120,15 @@ Rules:
 
 ## sync() model: class sets + detach functions
 
+The app keeps multiple thread containers mounted, including hidden chats. Query
+all `THREAD_SELECTOR` matches and reconcile them through `currentThreads`; never
+assume the first match is the visible chat. Collect messages, native UI exclusions,
+and zoom content roots from every thread, and detach removed threads in both
+`sync()` and `cleanup()`. File previews must be outside all thread containers.
+Target conversation zoom with `[data-thread-user-message-navigation-content="true"]`
+inside each thread. The footer is a direct child of the scroll container in the
+current app; its sibling/ancestor position must not be used to infer the transcript.
+
 `sync()` reconciles the current DOM against four tracked sets
 (`currentMessages`, `currentPreviews`, `currentPlans`, `currentNativeUiRoots`)
 plus the thread. The pattern is always the same:
