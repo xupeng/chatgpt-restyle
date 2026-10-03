@@ -1,3 +1,19 @@
+@font-face {
+  font-family: "ChatGPT LXGW";
+  src: local("LXGW WenKai Regular"), local("LXGWWenKai-Regular");
+  font-style: normal;
+  font-weight: 100 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "ChatGPT LXGW";
+  src: local("LXGW ZhenKai GB"), local("LXGWZhenKaiGB"), local("LXGW ZhenKai"), local("LXGWZhenKai-Regular");
+  font-style: normal;
+  font-weight: 501 900;
+  font-display: swap;
+}
+
 :is(
   :root,
   .chatgpt-chat-typography-thread,
@@ -6,9 +22,9 @@
   .chatgpt-restyle-font-root [data-codex-xterm]
 ) {
   --chat-ui-font-family: "Oxanium";
-  --chat-font-family: "Oxanium", "LXGW WenKai Screen";
+  --chat-font-family: "Oxanium", "ChatGPT LXGW", "LXGW WenKai";
   --chat-font-size: 16px;
-  --chat-font-weight: 500;
+  --chat-font-weight: 400;
   --chat-line-height: 1.75;
   --chat-block-gap: 0.75em;
   --chat-message-gap: 24px;
