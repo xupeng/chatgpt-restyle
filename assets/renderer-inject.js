@@ -234,7 +234,8 @@
   const fontAvailable = () => {
     try {
       return (document.fonts?.check('16px "Oxanium"')
-        && document.fonts.check('16px "LXGW WenKai Screen"')) ?? false;
+        && document.fonts.check('400 16px "ChatGPT LXGW"', "正文")
+        && document.fonts.check('700 16px "ChatGPT LXGW"', "加粗")) ?? false;
     } catch {
       return false;
     }
@@ -245,7 +246,8 @@
     if (!fontEnabled || !state || typeof document.fonts?.load !== "function") return;
     Promise.all([
       document.fonts.load('16px "Oxanium"'),
-      document.fonts.load('16px "LXGW WenKai Screen"'),
+      document.fonts.load('400 16px "ChatGPT LXGW"', "正文"),
+      document.fonts.load('700 16px "ChatGPT LXGW"', "加粗"),
     ]).then(() => {
       if (window[STATE_KEY] === state) state.fontAvailable = fontAvailable();
     }).catch(() => {

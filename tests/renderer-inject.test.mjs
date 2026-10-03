@@ -467,7 +467,7 @@ test("CSS styles the app UI, conversation, and current Markdown file editor", ()
   assert.match(css, /\.chatgpt-chat-typography-plan\.chatgpt-chat-typography-plan/);
   assert.match(css, /\.chatgpt-chat-typography-plan/);
   assert.match(css, /\.chatgpt-chat-typography-native-ui \*/);
-  assert.match(css, /--chat-font-weight:\s*500/);
+  assert.match(css, /--chat-font-weight:\s*400/);
   assert.match(css, /--chat-code-font-weight:\s*400/);
   assert.match(css, /--chat-code-font-size:\s*14px/);
   assert.match(css, /--chat-code-font-family:\s*"Cascadia Code",\s*var\(--chat-native-code-font-family,\s*ui-monospace,\s*monospace\)/);
@@ -476,7 +476,7 @@ test("CSS styles the app UI, conversation, and current Markdown file editor", ()
   assert.match(css, /--chat-code-surface:\s*color-mix/);
   assert.match(css, /--chat-code-border-color:\s*color-mix/);
   assert.match(css, /--chat-ui-font-family:\s*"Oxanium"/);
-  assert.match(css, /--chat-font-family:\s*"Oxanium",\s*"LXGW WenKai Screen"/);
+  assert.match(css, /--chat-font-family:\s*"Oxanium",\s*"ChatGPT LXGW",\s*"LXGW WenKai"/);
   assert.match(css, /\.chatgpt-restyle-font-root body \*/);
   assert.match(css, /font-family:\s*var\(--chat-ui-font-family\),\s*system-ui,\s*sans-serif/);
   assert.match(css, /\.chatgpt-restyle-font-root \[data-codex-xterm\] \*/);

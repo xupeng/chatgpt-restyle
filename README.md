@@ -8,16 +8,17 @@ ChatGPT Restyle 是一个修改 ChatGPT Desktop 界面、对话区域、右侧 M
 
 - macOS
 - 官方 ChatGPT Desktop（Bundle ID 为 `com.openai.codex`）
-- 已安装 `LXGW WenKai Screen`
+- 已安装 `LXGW WenKai`（霞鹜文楷）及 `LXGW ZhenKai GB`（霞鹜臻楷）
 
 `Oxanium` 由 Google Fonts 在线加载，不需要安装到本机。
 
 ## 默认排版
 
 - 界面及正文英文：`Oxanium`；界面中文继续使用 ChatGPT 原生系统字体
-- 正文中文：`LXGW WenKai Screen`，`16px`，字重 `500`，行高 `1.75`
-- 标题（对话、Markdown 文件预览、Plan）：保留原生字号与字重，字体与正文一致
-  （英文 `Oxanium`、中文 `LXGW WenKai Screen`）
+- 正文中文：`LXGW WenKai`，`16px`，字重 `400`，行高 `1.75`
+- 加粗中文：字重超过 `500` 时使用 `LXGW ZhenKai GB`（也支持旧版 `LXGW ZhenKai`）
+- 标题（对话、Markdown 文件预览、Plan）：保留原生字号与字重，英文使用 `Oxanium`，
+  中文按字重使用霞鹜文楷或霞鹜臻楷
 - 块间距：`0.75em`
 - 消息间距：`24px`
 - 代码及 Terminal：优先使用 `Cascadia Code`，未安装时回退到 ChatGPT 原生等宽字体
